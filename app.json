@@ -19,10 +19,15 @@
       "value": "12341231412312312312312323123123",
       "required": "true"
     },
-    "SLACK_VERIFICATION_TOKEN": {
-      "description": "Your Slack verification token",
-      "value": "123412314123123123123123",
-      "required": "true"
+    "HOST": {
+      "description": "The host on which the bot will listen",
+      "value": "127.0.0.1",
+      "required": "false"
+    },
+    "PORT": {
+      "description": "The port on which the bot will listen",
+      "value": "80",
+      "required": "false"
     },
   }
 }

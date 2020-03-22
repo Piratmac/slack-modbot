@@ -8,10 +8,14 @@ import time
 
 
 
+if os.environ.get("SLACK_SIGNING_SECRET") is None or os.environ.get('SLACK_BOT_TOKEN') is None:
+  raise ValueError('Missing signing secret or bot token')
+
+
 
 settings = {
   'main': {
-    'username': os.environ.get("SLACK_BOT_USERNAME"),
+    'username': os.environ.get("SLACK_BOT_USERNAME", 'keyword_bot'),
     'icon_emoji': ":robot_face:",
     'user_id': '', # This will be determined upon startup
   },
