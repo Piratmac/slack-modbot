@@ -88,4 +88,4 @@ if __name__ == "__main__":
 
   start_time = time.time()
   logger.info('Server started at %f', start_time)
-  slack_events_adapter.start(port=os.environ.get("PORT", 80))
+  slack_events_adapter.start(host=os.environ.get("HOST", '127.0.0.1'), port=os.environ.get("PORT", 80))
