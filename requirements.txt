@@ -5,3 +5,4 @@ requests-ftp==0.3.1
 slackclient==2.1.0
 slackeventsapi==2.1.0
 websocket-client==0.56.0
+gunicorn==19.9.0

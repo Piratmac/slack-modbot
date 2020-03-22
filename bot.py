@@ -69,23 +69,23 @@ def message(payload):
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger()
-    logger.setLevel(os.environ.get("DEBUG_LEVEL", logging.DEBUG))
-    logger.addHandler(logging.StreamHandler())
+  logger = logging.getLogger()
+  logger.setLevel(os.environ.get("DEBUG_LEVEL", logging.DEBUG))
+  logger.addHandler(logging.StreamHandler())
 
-    # Determine own identity
-    settings['main']['user_id'] = slack_web_client.auth_test()['user_id']
-    logger.info('Connected with user ID %s', settings['main']['user_id'])
+  # Determine own identity
+  settings['main']['user_id'] = slack_web_client.auth_test()['user_id']
+  logger.info('Connected with user ID %s', settings['main']['user_id'])
 
 
-    if 'active_bot_modules' in settings:
-      for bot_module_name in settings['active_bot_modules']:
-        module_name      = settings['active_bot_modules'][bot_module_name]['module_name']
-        class_name       = settings['active_bot_modules'][bot_module_name]['class_name']
-        module_settings  = settings['active_bot_modules'][bot_module_name]
-        new_module = getattr(importlib.import_module(module_name), class_name)
-        bot_modules.append(new_module(slack_web_client, module_settings))
+  if 'active_bot_modules' in settings:
+    for bot_module_name in settings['active_bot_modules']:
+      module_name      = settings['active_bot_modules'][bot_module_name]['module_name']
+      class_name       = settings['active_bot_modules'][bot_module_name]['class_name']
+      module_settings  = settings['active_bot_modules'][bot_module_name]
+      new_module = getattr(importlib.import_module(module_name), class_name)
+      bot_modules.append(new_module(slack_web_client, module_settings))
 
-    start_time = time.time()
-    logger.info('Server started at %f', start_time)
-    slack_events_adapter.start(port=9080)
+  start_time = time.time()
+  logger.info('Server started at %f', start_time)
+  slack_events_adapter.start(port=9080)
