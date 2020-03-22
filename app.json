@@ -1,0 +1,28 @@
+{
+  "name": "KeywordsSlack",
+  "description": "This app connects to your slack team and reacts to specific keywords and help onboard people",
+  "keywords": [
+    "productivity",
+    "Slack",
+    "bot"
+  ],
+  "website": "https://github.com/Piratmac/slack-keywords-bot-private",
+  "repository": "https://github.com/Piratmac/slack-keywords-bot-private",
+  "env": {
+    "SLACK_BOT_TOKEN": {
+      "description": "Your Slack bot Token",
+      "value": "1234-12314123123-123123123",
+      "required": "true"
+    },
+    "SLACK_SIGNING_SECRET": {
+      "description": "Your Slack signing secret",
+      "value": "12341231412312312312312323123123",
+      "required": "true"
+    },
+    "SLACK_VERIFICATION_TOKEN": {
+      "description": "Your Slack verification token",
+      "value": "123412314123123123123123",
+      "required": "true"
+    },
+  }
+}
