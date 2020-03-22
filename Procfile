@@ -1,1 +1,1 @@
-worker: gunicorn bot:bot
+worker: gunicorn bot:slack_events_adapter
