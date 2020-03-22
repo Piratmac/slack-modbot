@@ -1,125 +1,91 @@
-import websocket
-import json
-import requests
-import urllib
 import os
-import sys
 import logging
+from bot_web_client import BotWebClient
+from slackeventsapi import SlackEventAdapter
+from base_bot_module import BaseBotModule
+import importlib
+import time
 
 
 
-logging.basicConfig(level=logging.DEBUG,
-        stream=sys.stdout)
 
-# Suppress InsecureRequestWarning
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+settings = {
+  'main': {
+    'username': os.environ.get("SLACK_BOT_USERNAME"),
+    'icon_emoji': ":robot_face:",
+    'user_id': '', # This will be determined upon startup
+  },
 
-###VARIABLES THAT YOU NEED TO SET MANUALLY IF NOT ON HEROKU#####
-try:
-        # MESSAGE = os.environ.get('WELCOME_MESSAGE')
-        # TOKEN = os.environ.get('SLACK_TOKEN')
-        # CHANNEL_TOKEN = os.environ.get('CHANNEL_TOKEN')
-        # UNFURL = os.environ.get('UNFURL_LINKS')
-        # RESPONSE_CHANNEL = os.environ.get('RESPONSE_CHANNEL')
-        # DEBUG_CHANNEL_ID = os.environ.get('DEBUG_CHANNEL_ID', False)
-        MESSAGE = 'Test welcome message'
-        TOKEN = 'xoxb-1016596412276-1019271175270-tdfj0B6zU9vqqZ9cney6vPBK'
-        CHANNEL_TOKEN = 'C010JQ4LREK' #général
-        UNFURL = False
-        RESPONSE_CHANNEL = 'C010JQ4LUSK' #jdemetz-test
-        DEBUG_CHANNEL_ID = 'C010GHJC9B6' # Aléatoire
-except:
-        MESSAGE = 'Manually set the Message if youre not running through heroku or have not set vars in ENV'
-        TOKEN = 'Manually set the API Token if youre not running through heroku or have not set vars in ENV'
-        UNFURL = 'FALSE'
-###############################################################
+  'active_bot_modules': {
+    'KeywordsModule': {
+      'module_name': 'keywords_module',
+      'class_name':  'KeywordsModule',
+    }
+  }
+}
 
-def is_team_join(msg):
-    return msg['type'] == "team_join"
 
-def is_debug_channel_join(msg):
-    return msg['type'] == "member_joined_channel" and msg['channel'] == DEBUG_CHANNEL_ID and msg['channel_type'] == 'C'
+slack_events_adapter = SlackEventAdapter(os.environ.get("SLACK_SIGNING_SECRET"), "/slack/events")
 
-def is_direct_message(msg):
-    is_bot = False
-    if 'bot_id' in msg:
-        is_bot = True
-    return msg['type'] == "message" and msg['channel'][0] == 'D' and not is_bot
 
-def get_display_name(user_id):
-    logging.debug('FINDING USER WITH ID'+user_id)
-    users = requests.get("https://slack.com/api/users.list?token="+TOKEN)
-    users = users.json()
+# Initialize a Web API client
+slack_web_client = BotWebClient(token=os.environ.get('SLACK_BOT_TOKEN'))
+slack_web_client.set_bot_settings(settings['main'])
 
-    for item in users['members']:
-        if user_id == item['id']:
-            return item['real_name']
+bot_modules = []
 
-def parse_join(message):
-    m = json.loads(message)
-    if is_team_join(m) or is_debug_channel_join(m):
-        user_id = m["user"]["id"] if is_team_join(m) else m["user"]
-        logging.debug(m)
-        x = requests.get("https://slack.com/api/im.open?token="+TOKEN+"&user="+user_id)
-        x = x.json()
-        x = x["channel"]["id"]
-        logging.debug(x)
 
-        data = {
-                'token': TOKEN,
-                'channel': x,
-                'text': MESSAGE,
-                'parse': 'full',
-                'as_user': 'true',
-                }
+# ============== Message Events ============= #
+# When a user sends a DM, the event type will be 'message'.
+# Here we'll link the message callback to the 'message' event.
+@slack_events_adapter.on("message")
+def message(payload):
+  global start_time
+  event = payload.get("event", {})
 
-        logging.debug(data)
+  # Ignores all old events
+  if float(payload['event_time']) < start_time:
+    logger.info('Event ignored - Happened before connection : %s compared to %f', payload['event_time'], start_time)
+    return
 
-        if (UNFURL.lower() == "false"):
-          data = data.update({'unfurl_link': 'false'})
+  elif 'subtype' in event and event['subtype'] == 'message_deleted':
+    for bot_module in bot_modules:
+      bot_module.on_message_deletion(event)
+    return
 
-        xx = requests.post("https://slack.com/api/chat.postMessage", data=data)
-        logging.debug('\033[91m' + "HELLO SENT TO " + m["user"]["id"] + '\033[0m')
+  elif 'subtype' in event and event['subtype'] == 'message_changed':
+    for bot_module in bot_modules:
+      bot_module.on_message_changed(event)
+    return
 
-    if is_direct_message(m):
-        logging.debug('DM RECEIVED')
-        user_id = m["user"]
-        user_message = m['text']
-        user_message = urllib.quote(user_message)
+  elif 'user' in event and event['user'] == settings['main']['user_id']:
+    logger.info('Event ignored - Emitted by the bot')
+    return
 
-        # Need to get the display name from the user_id
-        real_name = get_display_name(user_id)
+  logger.debug(payload)
 
-        #logging.DEBUG('SENDING MESSAGE: '+user_message+' TO USER '+real_name)
-        # Need to send a message to a channel
-        requests.get("https://slack.com/api/chat.postMessage?token="+CHANNEL_TOKEN+"&channel="+RESPONSE_CHANNEL+"&text="+user_message+"&as_user=false&username="+real_name)
-
-#Connects to Slacks and initiates socket handshake
-def start_rtm():
-
-    r = requests.get("https://slack.com/api/rtm.connect?token="+TOKEN, verify=False)
-    print("https://slack.com/api/rtm.connect?token="+TOKEN)
-    r = r.json()
-    logging.info(r)
-    r = r["url"]
-    return r
-
-def on_message(ws, message):
-    parse_join(message)
-
-def on_error(ws, error):
-    logging.error("SOME ERROR HAS HAPPENED: " + error)
-
-def on_close(ws):
-    logging.info('\033[91m'+"Connection Closed"+'\033[0m')
-
-def on_open(ws):
-    logging.info("Connection Started - Auto Greeting new joiners to the network")
+  for bot_module in bot_modules:
+    bot_module.on_message(event)
 
 
 if __name__ == "__main__":
-    r = start_rtm()
-    ws = websocket.WebSocketApp(r, on_message = on_message, on_error = on_error, on_close = on_close)
-    #ws.on_open
-    ws.run_forever()
+    logger = logging.getLogger()
+    logger.setLevel(os.environ.get("DEBUG_LEVEL", logging.DEBUG))
+    logger.addHandler(logging.StreamHandler())
+
+    # Determine own identity
+    settings['main']['user_id'] = slack_web_client.auth_test()['user_id']
+    logger.info('Connected with user ID %s', settings['main']['user_id'])
+
+
+    if 'active_bot_modules' in settings:
+      for bot_module_name in settings['active_bot_modules']:
+        module_name      = settings['active_bot_modules'][bot_module_name]['module_name']
+        class_name       = settings['active_bot_modules'][bot_module_name]['class_name']
+        module_settings  = settings['active_bot_modules'][bot_module_name]
+        new_module = getattr(importlib.import_module(module_name), class_name)
+        bot_modules.append(new_module(slack_web_client, module_settings))
+
+    start_time = time.time()
+    logger.info('Server started at %f', start_time)
+    slack_events_adapter.start(port=9080)
