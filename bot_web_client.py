@@ -1,31 +1,72 @@
+#!/usr/bin/env python
+
+"""
+    Modified slack.WebClient class for simplified calls
+"""
+
+
 from slack import WebClient
+from slack.errors import SlackApiError
+
 
 class BotWebClient (WebClient):
-  def set_bot_settings (self, settings):
-    self.settings = settings
+    """
+    Allows sending data to Slack through various means
 
-  def chat_postMessage(self, input_data):
-    payload = self.settings.copy()
-    payload.update(input_data)
+    Overriden methods are meant to simplify the use by bot modules.
+    Most methods will add the settings to modules' data.
 
-    return super().chat_postMessage(**payload)
+    Attributes:
+        settings    Configuration used by the bot to send data
+    """
+    settings = {
+        'username': 'keyword_bot',
+        'icon_emoji': ":robot_face:",
+        'user_id': '',
+        }
 
+    def set_bot_settings(self, settings):
+        """
+            Stores settings provided by the Bot class
 
-  def conversations_open(self, input_data):
-    payload = self.settings.copy()
-    payload.update(input_data)
+            :param dict settings: The settings to be applied by the module
+            :return: None
 
-    return super().conversations_open(**payload)
+        """
+        self.settings.update(settings)
 
+    def chat_postMessage(self, input_data):
+        """
+            Sends a regular message
 
+            :param dict input_data: The message to be sent
+        """
+        payload = self.settings.copy()
+        payload.update(input_data)
 
-  def chat_postEphemeral(self, input_data):
-    payload = self.settings.copy()
-    payload.update(input_data)
+        return super().chat_postMessage(**payload)
 
-    return super().chat_postEphemeral(**payload)
+    def conversations_open(self, input_data):
+        """
+            Opens a new IM
 
+            :param dict input_data: The message to be sent
+        """
+        payload = self.settings.copy()
+        payload.update(input_data)
 
-  def conversations_join(self, channel, **kwargs):
-    kwargs.update({"channel": channel})
-    return super().api_call("conversations.join", json=kwargs)
+        return super().conversations_open(**payload)
+
+    def chat_postEphemeral(self, input_data):
+        """
+            Sends an ephemeral message
+
+            Ephemeral messages are temporary and visible only by the recipient.
+            This is useful for posting on public channels.
+
+            :param dict input_data: The message to be sent
+        """
+        payload = self.settings.copy()
+        payload.update(input_data)
+
+        return super().chat_postEphemeral(**payload)
