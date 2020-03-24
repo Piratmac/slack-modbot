@@ -88,17 +88,15 @@ class KeywordsModule (BaseBotModule):
     def load_keywords(self):
         """Loads keywords from config file. Does nothing if file unreadable."""
         try:
-            data = open(self.keywords_file_name, "r")
-            self.keywords = json.loads(data.read().strip())
-            data.close()
+            with open(self.keywords_file_name, "r") as config_file:
+                self.keywords = json.loads(config_file.read().strip())
         except IOError:
             logger.info('Keyword: Configuration file read error.')
 
     def save_keywords(self):
         """Saves keywords into the config file."""
-        pointer = open(self.keywords_file_name, "w")
-        json.dump(self.keywords, pointer, ensure_ascii=False)
-        pointer.close()
+        with open(self.keywords_file_name, "w") as config_file:
+            json.dump(self.keywords, config_file, ensure_ascii=False)
 
     def on_message(self, event):
         """
@@ -211,9 +209,10 @@ class KeywordsModule (BaseBotModule):
 
         # Just make the list and send it
         self.log_info('[Keyword] List viewed by %s', event['user'])
-        keywords_list = ['*' + keyword + '* : ' + message
-                         for keyword, message in self.keywords.items()]
-        keywords_list = '\n'.join(keywords_list)
+        keywords_list = '\n'.join(['*' + keyword + '* : ' + message
+                                   for keyword, message
+                                   in self.keywords.items()])
+
         reply_text = self.replies['keyword_list'] \
             .replace('{keywords}', keywords_list)
         reply_data.update({'text': reply_text})
