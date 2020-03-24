@@ -101,6 +101,13 @@ class KeywordsModule (BaseBotModule):
         pointer.close()
 
     def on_message(self, event):
+        """
+        Processes received events and sends a reply
+
+        :param dict event: The event received
+        :return: True if a message was sent, False otherwise
+        :rtype: Boolean
+        """
         reply_message = {
             'channel': event['channel'],
             'user': event['user'],
@@ -145,6 +152,7 @@ class KeywordsModule (BaseBotModule):
         # Let's send this message!
         if reply_message['ready_to_send']:
             self._send_reply_message(reply_message)
+            return True
 
         # No keyword found
         else:
