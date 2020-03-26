@@ -27,19 +27,19 @@ class ModbotWebClient (WebClient):
 
     def set_client_settings(self, settings):
         """
-            Stores settings provided by the main file
+        Stores settings provided by the main file
 
-            :param dict settings: The settings to be applied by the module
-            :return: None
+        :param dict settings: The settings to be applied by the module
+        :return: None
 
         """
         self.settings.update(settings)
 
     def chat_postMessage(self, input_data):
         """
-            Sends a regular message
+        Sends a regular message
 
-            :param dict input_data: The message to be sent
+        :param dict input_data: The message to be sent
         """
         payload = self.settings.copy()
         payload.update(input_data)
@@ -48,9 +48,9 @@ class ModbotWebClient (WebClient):
 
     def conversations_open(self, input_data):
         """
-            Opens a new IM
+        Opens a new IM
 
-            :param dict input_data: The message to be sent
+        :param dict input_data: The message to be sent
         """
         payload = self.settings.copy()
         payload.update(input_data)
@@ -59,12 +59,12 @@ class ModbotWebClient (WebClient):
 
     def chat_postEphemeral(self, input_data):
         """
-            Sends an ephemeral message
+        Sends an ephemeral message
 
-            Ephemeral messages are temporary and visible only by the recipient.
-            This is useful for posting on public channels.
+        Ephemeral messages are temporary and visible only by the recipient.
+        This is useful for posting on public channels.
 
-            :param dict input_data: The message to be sent
+        :param dict input_data: The message to be sent
         """
         payload = self.settings.copy()
         payload.update(input_data)

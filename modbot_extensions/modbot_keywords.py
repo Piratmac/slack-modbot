@@ -22,20 +22,22 @@
 import os
 import json
 
-from modbot_extension import ModbotExtension
+import modbot_extension
 
 
-class Keywords(ModbotExtension):
+class Keywords(modbot_extension.ModbotExtension):
     """
     Replies to messages containing given keywords with specific replies
 
     Attributes:
+        name                The name of the extension
         keywords            A dict object of the form keyword:reply.
-        keywords_file_name  The name of the configuration file
+        config_file  The name of the configuration file
     """
 
+    name = 'Keywords'
     keywords = {}
-    keywords_file_name = 'keywords_module_config.json'
+    config_file = 'modbot_keywords_.json'
     replies = {
         'config_in_public': '\n'.join((
             'Hello!',
@@ -82,20 +84,21 @@ class Keywords(ModbotExtension):
         :return: None
         """
         super().__init__(slack_web_client, settings)
+        self.config_file = settings['config_file']
         self.load_keywords()
         self.log_info('[Keyword] Module started and ready to go')
 
     def load_keywords(self):
         """Loads keywords from config file. Does nothing if file unreadable."""
         try:
-            with open(self.keywords_file_name, "r") as config_file:
+            with open(self.config_file, "r") as config_file:
                 self.keywords = json.loads(config_file.read().strip())
         except IOError:
             logger.info('Keyword: Configuration file read error.')
 
     def save_keywords(self):
         """Saves keywords into the config file."""
-        with open(self.keywords_file_name, "w") as config_file:
+        with open(self.config_file, "w") as config_file:
             json.dump(self.keywords, config_file, ensure_ascii=False)
 
     def on_message(self, event):
@@ -378,3 +381,6 @@ class Keywords(ModbotExtension):
         else:
             del reply_message['type']
             self.webClient.chat_postEphemeral(reply_message)
+
+
+modbot_extension.extension_store.register_extension(Keywords)

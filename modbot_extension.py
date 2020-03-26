@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-    Base module for all of the bot's modules
+    Base class for all of the bot's extensions
 """
 
 import logging
@@ -18,6 +18,7 @@ class ModbotExtension:
     Most of the methods will not perform anything.
 
     Attributes:
+        name                The name of the extension
         settings            Configuration data for a module.
         state               Short-lived data common to all modules
         state_last_refresh  Last refresh of state (determines when to clean it)
@@ -25,6 +26,7 @@ class ModbotExtension:
     """
     global logging
 
+    name = ''
     settings = {}
     state = {'channels': {}, 'users': {}}
     state_last_refresh = 0
@@ -107,3 +109,119 @@ class ModbotExtension:
         user_data = self.get_user_info(user)
 
         return user_data['is_owner']
+
+
+class ExtensionStore(object):
+    """
+    The extension store
+
+    All modbot classes must register themselves via register_extension
+
+    Attributes:
+        extensions          All registered extensions
+
+    """
+
+    extensions = {}
+
+    def register_extension(self, extension_class):
+        """
+        Registers an extension
+
+        All extensions must call this method to get registered
+
+        :param object extension_class: The extension's class
+        """
+        if extension_class.name not in self.extensions:
+            self.extensions[extension_class.name] = {
+                'class': extension_class,
+                'loaded': False,
+                'enabled': False,
+            }
+        logging.info(
+            '[ExtStore] Extension ' + extension_class.name + ' registered'
+        )
+
+    def load_extension(self, name, slack_web_client, ext_settings):
+        """
+        Loads an extension
+
+        This allows the extension to link with the web client
+
+        :param object slack_web_client: The Modbot web client
+        :param dict ext_settings: Extension settings as set in main program
+        """
+        if not self.extensions[name]['loaded']:
+            self.extensions[name].update({
+                'instance': self.extensions[name]['class'](
+                    slack_web_client, ext_settings
+                ),
+                'loaded': True,
+            })
+        logging.info('[ExtStore] Extension ' + name + ' loaded')
+
+    def enable_extension(self, name):
+        """
+        Enables an extension
+
+        This allows the extension to receive data from Slack
+
+        :param str name: The extension's name
+        :return: True if extension was enabled, False otherwise
+        :rtype: Boolean
+        """
+        if name not in self.extensions:
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not registered'
+            )
+            return False
+        else:
+            self.extensions[name].update({
+                'enabled': True,
+            })
+            logging.info(
+                '[ExtStore] Extension ' + name + ' enabled'
+            )
+            return True
+
+    def load_all(self, slack_web_client, ext_settings):
+        """
+        Loads all registered extensions
+
+        :param object slack_web_client: The Modbot web client
+        :param dict ext_settings: Extension settings as set in main program
+        """
+        for extension in self.extensions:
+            self.load_extension(extension, slack_web_client, ext_settings)
+
+    def enable_all(self):
+        """
+        Enables all loaded extensions
+
+        This allows the extension to receive data from Slack
+
+        :param str name: The extension's name
+        :return: True if extension was enabled, False otherwise
+        :rtype: Boolean
+        """
+        for name in self.extensions:
+            if self.is_enabled(name):
+                self.enable_extension(name)
+
+    def is_enabled(self, name):
+        """
+        Indicates whether an extension is loaded or not
+
+        :param str name: The extension's name
+        :return: True if extension is enabled, False otherwise
+        :rtype: Boolean
+        """
+        if name in self.extensions and self.extensions[name]['enabled']:
+            return True
+        return False
+
+extension_store = ExtensionStore()
+modbot_extension.extension_store.register_extension(Keywords)
+
+
+

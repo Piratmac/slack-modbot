@@ -23,7 +23,7 @@ import time
 
 from slackeventsapi import SlackEventAdapter
 
-from modbot_extension import ModbotExtension
+from modbot_extension import extension_store
 from webclient import ModbotWebClient
 
 # Checks important variables
@@ -42,10 +42,13 @@ settings = {
     'host': os.environ.get("HOST", '127.0.0.1'),
     'port': os.environ.get("PORT", 80),
 
-    'bot_extensions': {
+    'modbot_extensions': {
         'Keywords': {
             'module_name': 'modbot_keywords',
-            'keywords_config_file': 'modbot_keywords.json',
+            'config_file': os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                'modbot_extensions',
+                'modbot_keywords.json'),
         }
     }
 }
@@ -84,17 +87,6 @@ bot_user_data = slack_web_client.auth_test()
 state['user_id'] = bot_user_data['user_id']
 logger.info('[Bot] Connected with user ID %s', state['user_id'])
 
-# Import and load extensions
-for ext_name, ext_settings in settings['bot_extensions'].items():
-    globals()[ext_name] = __import__(
-        'modbot_extensions.' + ext_settings['module_name'],
-        globals(),
-        locals(),
-        [ext_name])
-    new_extension = getattr(globals()[ext_name], ext_name)
-    loaded_extensions.append(new_extension(slack_web_client,
-                                           ext_settings))
-
 # Reception of messages from the adapter
 @slack_events_adapter.on("message")
 def message(payload):
@@ -110,7 +102,7 @@ def message(payload):
     :param dict payload: Data received from Slack
     :return: True if messages were processed, False otherwise
     """
-    global settings, state, loaded_extensions
+    global state, logger, extension_store
     event = payload.get("event", {})
 
     # Ignores all old events
@@ -119,26 +111,46 @@ def message(payload):
         return False
 
     elif 'subtype' in event and event['subtype'] == 'message_deleted':
-        for loaded_extension in loaded_extensions:
-            loaded_extension.on_message_deletion(event)
+        for ext in extension_store.extensions:
+            if extension_store.is_enabled(ext):
+                extension_store \
+                    .extensions[ext]['instance'] \
+                    .on_message_deletion(event)
         return True
 
     elif 'subtype' in event and event['subtype'] == 'message_changed':
-        for loaded_extension in loaded_extensions:
-            loaded_extension.on_message_changed(event)
+        for ext in extension_store.extensions:
+            if extension_store.is_enabled(ext):
+                extension_store \
+                    .extensions[ext]['instance'] \
+                    .on_message_changed(event)
         return True
 
     elif 'user' in event and event['user'] == state['user_id']:
         logger.info('[Bot] Event triggered by the bot, ignoring')
         return False
 
-#    logger.debug(payload)
+    logger.debug(payload)
 
-    for loaded_extension in loaded_extensions:
-        loaded_extension.on_message(event)
+    for ext in extension_store.extensions:
+        if extension_store.is_enabled(ext):
+            extension_store \
+                .extensions[ext]['instance'] \
+                .on_message(event)
     return False
 
+
+# Load and enable extensions
+for ext_name, ext_settings in settings['modbot_extensions'].items():
+    __import__(
+        'modbot_extensions.' + ext_settings['module_name'],
+        globals(),
+        locals(),
+        [ext_name])
+    extension_store.load_extension(ext_name, slack_web_client, ext_settings)
+    extension_store.enable_extension(ext_name)
+
 # Start the reception of data
-slack_events_adapter.start(settings['host'], settings['port'])
 state['start_time'] = time.time()
 logger.info('[Bot] Server started at %f', state['start_time'])
+slack_events_adapter.start(settings['host'], settings['port'])
