@@ -9,7 +9,7 @@ from slack import WebClient
 from slack.errors import SlackApiError
 
 
-class BotWebClient (WebClient):
+class ModbotWebClient (WebClient):
     """
     Allows sending data to Slack through various means
 
@@ -25,9 +25,9 @@ class BotWebClient (WebClient):
         'user_id': '',
         }
 
-    def set_bot_settings(self, settings):
+    def set_client_settings(self, settings):
         """
-            Stores settings provided by the Bot class
+            Stores settings provided by the main file
 
             :param dict settings: The settings to be applied by the module
             :return: None

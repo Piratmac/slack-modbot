@@ -8,7 +8,7 @@ import logging
 import time
 
 
-class BaseBotModule:
+class ModbotExtension:
     """
     Describes the "interface" of a bot's module.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-    With this module, the bot will reply when a given keyword is detected
+    With this extension, the bot will reply when a given keyword is detected
 
     The behavior is similar to Slackbot, but replies are sent privately.
 
@@ -22,10 +22,10 @@
 import os
 import json
 
-from base_bot_module import BaseBotModule
+from modbot_extension import ModbotExtension
 
 
-class KeywordsModule (BaseBotModule):
+class Keywords(ModbotExtension):
     """
     Replies to messages containing given keywords with specific replies
 
