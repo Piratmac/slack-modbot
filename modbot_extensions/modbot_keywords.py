@@ -79,7 +79,7 @@ class Keywords(modbot_extension.ModbotExtension):
 
         The superclass method ensured proper storage of various attributes
 
-        :param BotWebClient slack_web_client: Slack web client
+        :param ModbotWebclient slack_web_client: Slack web client
         :param dict settings: The settings to be applied by the module
         :return: None
         """
@@ -322,7 +322,7 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Open an IM (private) chat to get the channel ID
         try:
-            open_IM_conversation = self.webClient.conversations_open({
+            open_IM_conversation = self.web_client.conversations_open({
                 'users': [event['user']],
                 'return_im': True
             })
@@ -377,10 +377,10 @@ class Keywords(modbot_extension.ModbotExtension):
         del reply_message['ready_to_send']
         if reply_message['type'] == 'regular':
             del reply_message['type']
-            self.webClient.chat_postMessage(reply_message)
+            self.web_client.chat_postMessage(reply_message)
         else:
             del reply_message['type']
-            self.webClient.chat_postEphemeral(reply_message)
+            self.web_client.chat_postEphemeral(reply_message)
 
 
 modbot_extension.extension_store.register_extension(Keywords)

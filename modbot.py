@@ -23,8 +23,8 @@ import time
 
 from slackeventsapi import SlackEventAdapter
 
-from modbot_extension import extension_store
-from webclient import ModbotWebClient
+from modbot_extension import extension_store, ExtensionManager
+from webclient import ModbotWebclient
 
 # Checks important variables
 if os.environ.get("SLACK_SIGNING_SECRET") is None \
@@ -42,14 +42,14 @@ settings = {
     'host': os.environ.get("HOST", '127.0.0.1'),
     'port': os.environ.get("PORT", 80),
 
-    'modbot_extensions': {
+    'extensions': {
         'Keywords': {
             'module_name': 'modbot_keywords',
             'config_file': os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 'modbot_extensions',
                 'modbot_keywords.json'),
-        }
+        },
     }
 }
 
@@ -79,7 +79,7 @@ slack_events_adapter = SlackEventAdapter(
     settings['api_endpoint'])
 
 # Starts the client which sends data to Slack
-slack_web_client = ModbotWebClient(token=settings['bot_token'])
+slack_web_client = ModbotWebclient(token=settings['bot_token'])
 slack_web_client.set_client_settings(settings)
 
 # Determine the user ID of the bot (to prevent self-replies)
@@ -140,8 +140,14 @@ def message(payload):
     return False
 
 
-# Load and enable extensions
-for ext_name, ext_settings in settings['modbot_extensions'].items():
+# Load and enable extensions, as well as the extension manager
+extension_store.register_extension(ExtensionManager)
+extension_store.load_extension(
+    'ExtensionManager',
+    slack_web_client,
+    )
+extension_store.enable_extension('ExtensionManager')
+for ext_name, ext_settings in settings['extensions'].items():
     __import__(
         'modbot_extensions.' + ext_settings['module_name'],
         globals(),

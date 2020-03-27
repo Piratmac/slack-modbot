@@ -9,7 +9,7 @@ from slack import WebClient
 from slack.errors import SlackApiError
 
 
-class ModbotWebClient (WebClient):
+class ModbotWebclient (WebClient):
     """
     Allows sending data to Slack through various means
 

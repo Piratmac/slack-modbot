@@ -22,6 +22,7 @@ class ModbotExtension:
         settings            Configuration data for a module.
         state               Short-lived data common to all modules
         state_last_refresh  Last refresh of state (determines when to clean it)
+        web_client          The client used to send messages
 
     """
     global logging
@@ -30,19 +31,20 @@ class ModbotExtension:
     settings = {}
     state = {'channels': {}, 'users': {}}
     state_last_refresh = 0
+    web_client = {}
 
-    def __init__(self, slack_web_client, settings):
+    def __init__(self, web_client, settings):
         """
         Stores a reference to the web client (for sending data) and settings
 
         This method should be executed by all inheriting classes.
         The data originates from the main Bot class
 
-        :param BotWebClient slack_web_client: Slack web client for sending data
+        :param ModbotWebclient web_client: Slack web client for sending data
         :param dict settings: The settings to be applied by the module
         :return: None
         """
-        self.webClient = slack_web_client
+        self.web_client = web_client
         self.settings = settings
         self.state_last_refresh = time.time()
 
@@ -79,7 +81,7 @@ class ModbotExtension:
             self.log_info('Refreshing cache of users and channels')
 
         if user not in self.state['users']:
-            user_data = self.webClient.users_info(user=user)['user']
+            user_data = self.web_client.users_info(user=user)['user']
             self.state['users'][user] = user_data
 
         return self.state['users'][user]
@@ -133,7 +135,7 @@ class ExtensionStore(object):
         :param object extension_class: The extension's class
         """
         if extension_class.name not in self.extensions:
-            self.extensions[extension_class.name] = {
+            self.extensions[extension_class.name.lower()] = {
                 'class': extension_class,
                 'loaded': False,
                 'enabled': False,
@@ -142,7 +144,7 @@ class ExtensionStore(object):
             '[ExtStore] Extension ' + extension_class.name + ' registered'
         )
 
-    def load_extension(self, name, slack_web_client, ext_settings):
+    def load_extension(self, name, slack_web_client, ext_settings={}):
         """
         Loads an extension
 
@@ -151,14 +153,18 @@ class ExtensionStore(object):
         :param object slack_web_client: The Modbot web client
         :param dict ext_settings: Extension settings as set in main program
         """
-        if not self.extensions[name]['loaded']:
-            self.extensions[name].update({
-                'instance': self.extensions[name]['class'](
+        if not self.is_registered(name):
+            logging.info('[ExtStore] Extension ' + name + ' unknown')
+            return False
+        if not self.is_loaded(name):
+            self.extensions[name.lower()].update({
+                'instance': self.extensions[name.lower()]['class'](
                     slack_web_client, ext_settings
                 ),
                 'loaded': True,
             })
         logging.info('[ExtStore] Extension ' + name + ' loaded')
+        return True
 
     def enable_extension(self, name):
         """
@@ -170,17 +176,51 @@ class ExtensionStore(object):
         :return: True if extension was enabled, False otherwise
         :rtype: Boolean
         """
-        if name not in self.extensions:
+        if not self.is_registered(name):
             logging.info(
                 '[ExtStore] Extension ' + name + ' not registered'
             )
             return False
+        elif not self.is_loaded(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not loaded'
+            )
+            return False
         else:
-            self.extensions[name].update({
+            self.extensions[name.lower()].update({
                 'enabled': True,
             })
             logging.info(
                 '[ExtStore] Extension ' + name + ' enabled'
+            )
+            return True
+
+    def disable_extension(self, name):
+        """
+        Disables an extension
+
+        This prevents the extension to receive data from Slack
+
+        :param str name: The extension's name
+        :return: True if extension was disabled, False otherwise
+        :rtype: Boolean
+        """
+        if not self.is_registered(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not registered'
+            )
+            return False
+        elif not self.is_enabled(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not enabled'
+            )
+            return False
+        else:
+            self.extensions[name.lower()].update({
+                'enabled': False,
+            })
+            logging.info(
+                '[ExtStore] Extension ' + name + ' disabled'
             )
             return True
 
@@ -205,8 +245,45 @@ class ExtensionStore(object):
         :rtype: Boolean
         """
         for name in self.extensions:
-            if self.is_enabled(name):
+            if self.is_loaded(name):
                 self.enable_extension(name)
+
+    def disable_all(self):
+        """
+        Disables all loaded extensions
+
+        This prevents all extensions to receive data from Slack
+
+        :param str name: The extension's name
+        :return: True if extension was enabled, False otherwise
+        :rtype: Boolean
+        """
+        for name in self.extensions:
+            if self.is_enabled(name):
+                self.disable_extension(name)
+
+    def is_registered(self, name):
+        """
+        Indicates whether an extension is registered or not
+
+        :param str name: The extension's name
+        :return: True if extension is registered, False otherwise
+        :rtype: Boolean
+        """
+        return (name.lower() in self.extensions)
+
+    def is_loaded(self, name):
+        """
+        Indicates whether an extension is loaded or not
+
+        :param str name: The extension's name
+        :return: True if extension is enabled, False otherwise
+        :rtype: Boolean
+        """
+        if self.is_registered(name) \
+                and self.extensions[name.lower()]['loaded']:
+            return True
+        return False
 
     def is_enabled(self, name):
         """
@@ -216,12 +293,361 @@ class ExtensionStore(object):
         :return: True if extension is enabled, False otherwise
         :rtype: Boolean
         """
-        if name in self.extensions and self.extensions[name]['enabled']:
+        if self.is_registered(name) \
+                and self.extensions[name.lower()]['enabled']:
             return True
         return False
 
+
+class ExtensionManager(ModbotExtension):
+    """
+    Manages extensions
+
+    Attributes:
+        name                The name of the extension
+        web_client          The client used to send messages
+
+    """
+    global logging
+
+    name = 'ExtensionManager'
+    web_client = {}
+
+    name = 'ExtensionManager'
+    replies = {
+        'config_in_public': '\n'.join((
+            'Hello!',
+            'Please configure me here, not in public (I\'m a bit shy...)'
+        )),
+        'config_in_im': '\n'.join((
+            'Hello!',
+            'Welcome to the configuration page',
+            '',
+            '- Type *extension list* for the list of extensions',
+            '- Type *extension load* _extension_ to load an extension',
+            '- Type *extension enable* _extension_ to enable an extension',
+            '- Type *extension disable* _extension_ to enable an extension',
+            '',
+            '*Attention!* Actions are performed without confirmation',
+        )),
+        'extension_list': '\n'.join((
+            'Hello!',
+            'Here are all identified extensions:',
+            '*name*: Whether it\'s enabled',
+            '{extensions}',
+        )),
+        'extension_load_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_load_success': '\n'.join((
+            'Success: Extension {extension} loaded successfully',
+        )),
+        'extension_load_failure': '\n'.join((
+            'Fail: Extension {extension} could not be loaded',
+        )),
+        'extension_enable_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_enable_success': '\n'.join((
+            'Success: Extension {extension} enabled successfully',
+        )),
+        'extension_enable_failure': '\n'.join((
+            'Fail: Extension {extension} could not be enabled',
+        )),
+        'extension_disable_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_disable_success': '\n'.join((
+            'Success: Extension {extension} disabled successfully',
+        )),
+        'extension_disable_failure': '\n'.join((
+            'Fail: Extension {extension} could not be disabled',
+        )),
+    }
+
+    def __init__(self, slack_web_client, settings):
+        """
+        Doesn't do much, except calling the superclass' method
+
+        :param ModbotWebclient slack_web_client: Slack web client
+        :param dict settings: The settings to be applied by the module
+        :return: None
+        """
+        super().__init__(slack_web_client, settings)
+        self.log_info('[ExtManager] Module started and ready to go')
+
+    def on_message(self, event):
+        """
+        Processes received events and sends a reply
+
+        :param dict event: The event received
+        :return: True if a message was sent, False otherwise
+        :rtype: Boolean
+        """
+        reply_message = {
+            'channel': event['channel'],
+            'user': event['user'],
+            'ready_to_send': False,
+            'type': 'ephemeral',
+        }
+        reply_data = False
+
+        # Handle messages from admins first
+        if event['text'].startswith('extension'):
+            if event['text'].startswith('extension list'):
+                reply_data = self.extension_list(event)
+            elif event['text'].startswith('extension load'):
+                reply_data = self.extension_add(event)
+            elif event['text'].startswith('extension enable'):
+                reply_data = self.extension_enable(event)
+            elif event['text'].startswith('extension disable'):
+                reply_data = self.extension_disable(event)
+
+        # We have a config message to send
+        if reply_data and reply_data['ready_to_send']:
+            reply_message.update(reply_data)
+            if reply_message['ready_to_send']:
+                self._send_reply_message(reply_message)
+                return True
+
+        # No reply found
+        else:
+            return False
+
+    def extension_list(self, event):
+        """
+        Reacts to 'extension list' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "list" by non-admin user %s',
+                event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Just make the list and send it
+        self.log_info('[ExtManager] List viewed by %s', event['user'])
+        ext_list = '\n'.join(['*' + extension + '* : '
+                              + str(extension_store.is_enabled(extension))
+                              for extension in extension_store.extensions])
+
+        reply_text = self.replies['extension_list'] \
+            .replace('{extensions}', ext_list)
+        reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def extension_load(self, event):
+        """
+        Reacts to 'extension load' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "load" by non-admin user %s',
+                event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 3:
+            self.log_info('[ExtManager] Config: Load missing info by user %s',
+                          event['user'])
+            reply_text = self.replies['extension_load_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            ext_name = event['text'].split(' ')[2].lower()
+            load_status = extension_store.load_extension(
+                ext_name,
+                self.web_client,
+                self.settings['extensions'][ext_name]
+            )
+            if load_status:
+                self.log_info(
+                    '[ExtManager] Extension %s loaded by %s',
+                    ext_name,
+                    event['user']
+                )
+                reply_text = self.replies['extension_load_success'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_load_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def extension_enable(self, event):
+        """
+        Reacts to 'extension enable' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "enable" by non-admin user %s',
+                event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 3:
+            self.log_info(
+                '[ExtManager] Config: Enable missing info by user %s',
+                event['user'])
+            reply_text = self.replies['extension_enable_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            ext_name = event['text'].split(' ')[2].lower()
+            enable_status = extension_store.enable_extension(ext_name)
+            if enable_status:
+                self.log_info(
+                    '[ExtManager] Extension %s enabled by %s',
+                    ext_name,
+                    event['user']
+                )
+                reply_text = self.replies['extension_enable_success'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_enable_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def extension_disable(self, event):
+        """
+        Reacts to 'extension disable' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "disable" by non-admin user %s',
+                event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 3:
+            self.log_info(
+                '[ExtManager] Config: Disable missing info by user %s',
+                event['user'])
+            reply_text = self.replies['extension_disable_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            ext_name = event['text'].split(' ')[2].lower()
+            disable_status = extension_store.disable_extension(ext_name)
+            if disable_status:
+                self.log_info(
+                    '[ExtManager] Extension %s disabled by %s',
+                    ext_name,
+                    event['user']
+                )
+                reply_text = self.replies['extension_disable_success'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_disable_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def switch_to_im(self, event):
+        """
+        Replies through IM when receiving config requests in public
+
+        :param dict event: The event received
+        :return: False for unauthorized users,
+                 a reply_data message otherwise
+        :rtype: False or dict
+        """
+        reply_data = {'type': 'regular'}
+
+        # Open an IM (private) chat to get the channel ID
+        try:
+            open_IM_conversation = self.web_client.conversations_open({
+                'users': [event['user']],
+                'return_im': True
+            })
+        except SlackApiError as e:
+            self.log_info(
+                '[ExtManager] FAIL: User data query for %s - Abort IM',
+                event['user'])
+            return False
+        # If IM chat could be open, simply send a message
+        else:
+            reply_data.update({
+                'channel': open_IM_conversation['channel']['id'],
+                'text': self.replies['config_in_public'],
+                'ready_to_send': True,
+            })
+            return reply_data
+
+    def _send_reply_message(self, reply_message):
+        """
+        Sends the reply in the proper type (regular or ephemeral)
+
+        :param str reply_message: The message to be sent
+        :return: None
+        """
+        del reply_message['ready_to_send']
+        if reply_message['type'] == 'regular':
+            del reply_message['type']
+            self.web_client.chat_postMessage(reply_message)
+        else:
+            del reply_message['type']
+            self.web_client.chat_postEphemeral(reply_message)
+
+
 extension_store = ExtensionStore()
-modbot_extension.extension_store.register_extension(Keywords)
-
-
-
