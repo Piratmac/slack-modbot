@@ -121,6 +121,8 @@ class Keywords(modbot_extension.ModbotExtension):
             'List of configuration keys:',
             '{config_keys}',
             '',
+            '_Note:_ Enabling both _reply_in_thread_ and _reply_in_ephemeral_ mean users will receive 2 messages',
+            '',
             '*Attention!* Actions are performed without confirmation',
         )),
         'keyword_config_types': {
@@ -202,7 +204,8 @@ class Keywords(modbot_extension.ModbotExtension):
             'channel': event['channel'],
             'user': event['user'],
             'ready_to_send': False,
-            'type': 'ephemeral',
+            'type': ['thread', 'ephemeral'],
+            'thread_ts': event['ts'],
         }
         reply_data = False
 
@@ -644,12 +647,24 @@ class Keywords(modbot_extension.ModbotExtension):
                         '<#' + channel_data['id'] + '>'
                     )
 
-        if reply_message['type'] == 'regular':
-            del reply_message['type']
-            self.web_client.chat_postMessage(reply_message)
-        else:
-            del reply_message['type']
-            self.web_client.chat_postEphemeral(reply_message)
+        if 'regular' in reply_message['type']:
+            reply_to_send = reply_message.copy()
+            del reply_to_send['type']
+            del reply_to_send['thread_ts']
+            self.web_client.chat_postMessage(reply_to_send)
+
+        if 'ephemeral' in reply_message['type'] \
+                and self.config_data['reply_in_ephemeral']:
+            reply_to_send = reply_message.copy()
+            del reply_to_send['type']
+            del reply_to_send['thread_ts']
+            self.web_client.chat_postEphemeral(reply_to_send)
+
+        if 'thread' in reply_message['type'] \
+                and self.config_data['reply_in_thread']:
+            reply_to_send = reply_message.copy()
+            del reply_to_send['type']
+            self.web_client.chat_postMessage(reply_to_send)
 
 
 modbot_extension.extension_store.register_extension(Keywords)

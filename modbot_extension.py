@@ -78,7 +78,7 @@ class ModbotExtension:
         """
         if (self.state_last_refresh + 60*10) < time.time():
             self.state = {'channels': {}, 'users': {}}
-            self.log_info('Refreshing cache of users and channels')
+            self.log_info('[BotExtension] Refreshing cache')
 
         if user not in self.state['users']:
             user_data = self.web_client.users_info(user=user)['user']
@@ -97,9 +97,10 @@ class ModbotExtension:
         :rtype: dict
 
         """
-        if (self.state_last_refresh + 60*10) < time.time():
+        if (self.state_last_refresh + 60*10) < time.time() \
+                or not self.state['channels']:
             self.state = {'channels': {}, 'users': {}}
-            self.log_info('Refreshing cache of users and channels')
+            self.log_info('[BotExtension] Refreshing cache')
             self.state['channels'] = \
                 self.web_client.conversations_list()['channels']
 
@@ -112,22 +113,7 @@ class ModbotExtension:
 
         if channel_found:
             return channel_found[0]
-        else:
-            # Otherwise, we refresh the entire list
-            self.state['channels'] = \
-                self.web_client.conversations_list()['channels']
-
-        # Then, run the search again (now that data is refreshed)
-        channel_found = [chan
-                         for chan in self.state['channels']
-                         if chan['name'] == channel
-                         or chan['id'] == channel
-                         ]
-
-        if channel_found:
-            return channel_found[0]
-        else:
-            return False
+        return False
 
     def user_is_admin(self, user):
         """
