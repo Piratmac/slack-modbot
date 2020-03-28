@@ -183,7 +183,7 @@ class Keywords(modbot_extension.ModbotExtension):
                 if 'config_data' in data:
                     self.config_data = data['config_data']
                 if 'keyword_template_text' in data:
-                    self.config_data = data['keyword_template_text']
+                    self.keyword_template_text = data['keyword_template_text']
         except IOError:
             logger.info('Keyword: Configuration file read error.')
 
@@ -192,7 +192,7 @@ class Keywords(modbot_extension.ModbotExtension):
         with open(self.config_file, "w") as config_file:
             json.dump({
                 'keywords': self.keywords,
-                'template': self.config_data,
+                'config_data': self.config_data,
                 'keyword_template_text': self.keyword_template_text,
             }, config_file, ensure_ascii=False)
 
@@ -229,15 +229,16 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Configuration keywords
         if 'keyword' in event_text_sanitized.split(' '):
-            # Exclude non-authorized people
+            # Keep only authorized people
             if self.user_is_admin(event['user']) \
-                    and self.user_is_owner(event['user']):
+                    or self.user_is_owner(event['user']):
 
                 # Redirect to a private chat (no config in public)
                 if event['channel_type'] == 'channel':
                     reply_data = self.switch_to_im(event)
                 else:
-                    if event_text_sanitized.startswith('keyword list'):
+                    if event_text_sanitized.startswith('keyword list') \
+                            or event_text_sanitized == 'keyword':
                         reply_data = self.keyword_list(event)
                     elif event_text_sanitized.startswith('keyword add'):
                         reply_data = self.keyword_add(event)
@@ -283,8 +284,8 @@ class Keywords(modbot_extension.ModbotExtension):
         """
         reply_data = {'type': 'regular'}
 
-        self.log_info('[Keyword] Config keyword in private by user %s',
-                      event['user'])
+        self.log_info('[Keyword] Config keyword in private by user %user',
+                      user=event['user'])
         reply_data.update({
             'text': self.replies['config_in_im'],
             'type': 'regular',
