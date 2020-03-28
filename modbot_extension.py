@@ -63,6 +63,18 @@ class ModbotExtension:
     def log_info(self, msg, *args, **kwargs):
         """Log errors without re-import of logging in each module."""
         global logging
+
+        if 'user' in kwargs:
+            user_data = self.get_user_info(kwargs['user'])
+            if user_data:
+                msg = msg.replace(
+                    '%user',
+                    user_data['profile']['real_name_normalized']
+                    + ' <' + kwargs['user'] + '>'
+                )
+            del kwargs['user']
+
+
         logging.info(msg, *args, **kwargs)
 
     def get_user_info(self, user):
@@ -81,10 +93,17 @@ class ModbotExtension:
             self.log_info('[BotExtension] Refreshing cache')
 
         if user not in self.state['users']:
-            user_data = self.web_client.users_info(user=user)['user']
-            self.state['users'][user] = user_data
+            user_data = self.web_client.users_info(user=user)
+            if user_data['ok']:
+                self.state['users'][user] = user_data['user']
+                return self.state['users'][user]
+            else:
+                logging.warning('[BotExtension] Couldn\'t find user %s', user)
+                return False
+        else:
+            return self.state['users'][user]
 
-        return self.state['users'][user]
+        return False
 
     def get_channel_info(self, channel):
         """
@@ -126,7 +145,10 @@ class ModbotExtension:
         """
         user_data = self.get_user_info(user)
 
-        return user_data['is_admin']
+        if user_data:
+            return user_data['is_admin']
+        else:
+            return False
 
     def user_is_owner(self, user):
         """
@@ -139,7 +161,10 @@ class ModbotExtension:
         """
         user_data = self.get_user_info(user)
 
-        return user_data['is_owner']
+        if user_data:
+            return user_data['is_owner']
+        else:
+            return False
 
 
 class ExtensionStore(object):
@@ -458,8 +483,8 @@ class ExtensionManager(ModbotExtension):
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
             self.log_info(
-                '[ExtManager] Config: "list" by non-admin user %s',
-                event['user'])
+                '[ExtManager] Config: "list" by non-admin user %user',
+                user=event['user'])
             return False
 
         # Redirect to a private chat so that we're not discussing in public
@@ -467,7 +492,7 @@ class ExtensionManager(ModbotExtension):
             return self.switch_to_im(event)
 
         # Just make the list and send it
-        self.log_info('[ExtManager] List viewed by %s', event['user'])
+        self.log_info('[ExtManager] List viewed by %user', user=event['user'])
         ext_list = '\n'.join(['*' + extension + '* : '
                               + str(extension_store.is_enabled(extension))
                               for extension in extension_store.extensions])
@@ -494,8 +519,8 @@ class ExtensionManager(ModbotExtension):
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
             self.log_info(
-                '[ExtManager] Config: "load" by non-admin user %s',
-                event['user'])
+                '[ExtManager] Config: "load" by non-admin %user',
+                user=event['user'])
             return False
 
         # Redirect to a private chat so that we're not discussing in public
@@ -504,8 +529,10 @@ class ExtensionManager(ModbotExtension):
 
         # Missing argument
         if len(event['text'].split(' ')) < 3:
-            self.log_info('[ExtManager] Config: Load missing info by user %s',
-                          event['user'])
+            self.log_info(
+                '[ExtManager] Config: Load missing info by user %user',
+                user=event['user']
+            )
             reply_text = self.replies['extension_load_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -517,9 +544,9 @@ class ExtensionManager(ModbotExtension):
             )
             if load_status:
                 self.log_info(
-                    '[ExtManager] Extension %s loaded by %s',
+                    '[ExtManager] Extension %s loaded by %user',
                     ext_name,
-                    event['user']
+                    user=event['user']
                 )
                 reply_text = self.replies['extension_load_success'] \
                     .replace('{extension}', ext_name)
@@ -547,8 +574,8 @@ class ExtensionManager(ModbotExtension):
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
             self.log_info(
-                '[ExtManager] Config: "enable" by non-admin user %s',
-                event['user'])
+                '[ExtManager] Config: "enable" by non-admin user %user',
+                user=event['user'])
             return False
 
         # Redirect to a private chat so that we're not discussing in public
@@ -558,8 +585,8 @@ class ExtensionManager(ModbotExtension):
         # Missing argument
         if len(event['text'].split(' ')) < 3:
             self.log_info(
-                '[ExtManager] Config: Enable missing info by user %s',
-                event['user'])
+                '[ExtManager] Config: Enable missing info by user %user',
+                user=event['user'])
             reply_text = self.replies['extension_enable_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -567,9 +594,9 @@ class ExtensionManager(ModbotExtension):
             enable_status = extension_store.enable_extension(ext_name)
             if enable_status:
                 self.log_info(
-                    '[ExtManager] Extension %s enabled by %s',
+                    '[ExtManager] Extension %s enabled by %user',
                     ext_name,
-                    event['user']
+                    user=event['user']
                 )
                 reply_text = self.replies['extension_enable_success'] \
                     .replace('{extension}', ext_name)
@@ -597,8 +624,8 @@ class ExtensionManager(ModbotExtension):
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
             self.log_info(
-                '[ExtManager] Config: "disable" by non-admin user %s',
-                event['user'])
+                '[ExtManager] Config: "disable" by non-admin %user',
+                user=event['user'])
             return False
 
         # Redirect to a private chat so that we're not discussing in public
@@ -608,8 +635,8 @@ class ExtensionManager(ModbotExtension):
         # Missing argument
         if len(event['text'].split(' ')) < 3:
             self.log_info(
-                '[ExtManager] Config: Disable missing info by user %s',
-                event['user'])
+                '[ExtManager] Config: Disable missing info by %user',
+                user=event['user'])
             reply_text = self.replies['extension_disable_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -617,9 +644,9 @@ class ExtensionManager(ModbotExtension):
             disable_status = extension_store.disable_extension(ext_name)
             if disable_status:
                 self.log_info(
-                    '[ExtManager] Extension %s disabled by %s',
+                    '[ExtManager] Extension %s disabled by %user',
                     ext_name,
-                    event['user']
+                    user=event['user']
                 )
                 reply_text = self.replies['extension_disable_success'] \
                     .replace('{extension}', ext_name)
@@ -651,8 +678,8 @@ class ExtensionManager(ModbotExtension):
             })
         except SlackApiError as e:
             self.log_info(
-                '[ExtManager] FAIL: User data query for %s - Abort IM',
-                event['user'])
+                '[ExtManager] FAIL: User data query for %user - Abort IM',
+                user=event['user'])
             return False
         # If IM chat could be open, simply send a message
         else:

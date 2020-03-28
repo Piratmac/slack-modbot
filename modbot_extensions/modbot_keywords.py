@@ -274,25 +274,6 @@ class Keywords(modbot_extension.ModbotExtension):
         else:
             return False
 
-    def keyword(self, event):
-        """
-        Reacts to 'keyword' messages
-
-        :param dict event: The event received
-        :return: Message to be sent
-        :rtype: dict
-        """
-        reply_data = {'type': 'regular'}
-
-        self.log_info('[Keyword] Config keyword in private by user %user',
-                      user=event['user'])
-        reply_data.update({
-            'text': self.replies['config_in_im'],
-            'type': 'regular',
-            'ready_to_send': True,
-        })
-        return reply_data
-
     def keyword_list(self, event):
         """
         Reacts to 'keyword list' messages
@@ -304,7 +285,7 @@ class Keywords(modbot_extension.ModbotExtension):
         reply_data = {'type': 'regular'}
 
         # Just make the list and send it
-        self.log_info('[Keyword] List viewed by %s', event['user'])
+        self.log_info('[Keyword] List viewed by %user', user=event['user'])
         keywords_list = '\n'.join([
             '*' + keyword + '* : ' + message
             for keyword, message in self.keywords.items()
@@ -335,8 +316,8 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Data is missing from the keyword
         if len(event['text'].split(' ')) < 4:
-            self.log_info('[Keyword] Add keyword missing info by user %s',
-                          event['user'])
+            self.log_info('[Keyword] Add keyword missing info by %user',
+                user=event['user'])
             reply_text = self.replies['keyword_add_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -344,9 +325,9 @@ class Keywords(modbot_extension.ModbotExtension):
             keyword = keyword.lower()
             self.keywords[keyword] = ' '.join(message)
             self.save_config()
-            self.log_info('[Keyword] New keyword %s by %s',
+            self.log_info('[Keyword] New keyword %s by %user',
                           keyword,
-                          event['user'])
+                          user=event['user'])
             reply_text = self.replies['keyword_add_confirmation'] \
                 .replace('{keyword}', keyword)
             reply_data.update({'text': reply_text})
@@ -366,22 +347,23 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Data is missing from the keyword
         if len(event['text'].split(' ')) < 3:
-            self.log_info('[Keyword] Template keyword missing info by user %s',
-                          event['user'])
+            self.log_info(
+                '[Keyword] Template keyword missing info by %user',
+                user=event['user'])
             reply_text = self.replies['keyword_template_missing_param']
             reply_data.update({'text': reply_text})
         else:
             template = event['text'][len('keyword template '):]
             if '{channels}' not in template:
                 self.log_info(
-                    '[Keyword] Template keyword missing {channels} by user %s',
-                    event['user'])
+                    '[Keyword] Template keyword missing {channels} by %user',
+                    user=event['user'])
                 reply_text = self.replies['keyword_template_missing_channel']
                 reply_data.update({'text': reply_text})
             else:
                 self.keyword_template_text = template
-                self.log_info('[Keyword] New template %s',
-                              event['user'])
+                self.log_info('[Keyword] New template by %user',
+                              user=event['user'])
                 reply_text = self.replies['keyword_template_confirmation']
                 reply_data.update({'text': reply_text})
 
@@ -400,8 +382,8 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Data is missing from the keyword
         if len(event['text'].split(' ')) < 4:
-            self.log_info('[Keyword] Quickadd keyword missing info by user %s',
-                          event['user'])
+            self.log_info('[Keyword] Quickadd keyword missing info by %user',
+                          user=event['user'])
             reply_text = self.replies['keyword_quickadd_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -410,17 +392,17 @@ class Keywords(modbot_extension.ModbotExtension):
                              if x.startswith('<') and x.endswith('>')]
             if not list_channels:
                 self.log_info(
-                    '[Keyword] Quickadd keyword without channels by user %s',
-                    event['user'])
+                    '[Keyword] Quickadd keyword without channels by %user',
+                    user=event['user'])
                 reply_text = self.replies['keyword_quickadd_missing_channel']
                 reply_data.update({'text': reply_text})
             else:
                 keyword = keyword.lower()
                 self.keywords[keyword] = list_channels
                 self.save_config()
-                self.log_info('[Keyword] New quick keyword %s by %s',
+                self.log_info('[Keyword] New quick keyword %s by %user',
                               keyword,
-                              event['user'])
+                              user=event['user'])
                 reply_text = self.replies['keyword_quickadd_confirmation'] \
                     .replace('{keyword}', keyword)
                 reply_data.update({'text': reply_text})
@@ -440,8 +422,8 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Data is missing from the keyword
         if len(event['text'].split(' ')) < 3:
-            self.log_info('[Keyword] Delete keyword missing info by user %s',
-                          event['user'])
+            self.log_info('[Keyword] Delete keyword missing info by user %user',
+                          user=event['user'])
             reply_text = self.replies['keyword_delete_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -450,9 +432,9 @@ class Keywords(modbot_extension.ModbotExtension):
             if keyword in self.keywords:
                 del self.keywords[keyword]
                 self.save_config()
-                self.log_info('[Keyword] Keyword %s deleted by %s',
+                self.log_info('[Keyword] Keyword %s deleted by %user',
                               keyword,
-                              event['user'])
+                              user=event['user'])
                 reply_text = self.replies['keyword_delete_confirmation'] \
                     .replace('{keyword}', keyword)
                 reply_data.update({'text': reply_text})
@@ -523,7 +505,8 @@ class Keywords(modbot_extension.ModbotExtension):
         reply_data = {'type': 'regular'}
 
         # Just make the list and send it
-        self.log_info('[Keyword] Config list viewed by %s', event['user'])
+        self.log_info('[Keyword] Config list viewed by %user',
+            user=event['user'])
 
         config_list = '\n'.join([
             '*' + key + '* : '
@@ -578,8 +561,10 @@ class Keywords(modbot_extension.ModbotExtension):
                 'return_im': True
             })
         except SlackApiError as e:
-            self.log_info('[Keyword] FAIL: User data query for %s - Abort IM',
-                          event['user'])
+            self.log_info(
+                '[Keyword] FAIL: User data query for %user - Abort IM',
+                user=event['user']
+            )
             return False
         # If IM chat could be open, simply send a message
         else:
@@ -609,9 +594,9 @@ class Keywords(modbot_extension.ModbotExtension):
         if not matching_keywords:
             return False
 
-        self.log_info('[Keyword] Keyword %s sent by user %s',
+        self.log_info('[Keyword] Keyword %s sent by %user',
                       matching_keywords[0],
-                      event['user'])
+                      user=event['user'])
         keyword_reply = self.keywords[matching_keywords[0]]
         if isinstance(keyword_reply, str):
             reply_data.update({
