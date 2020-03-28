@@ -21,6 +21,7 @@
 
 import os
 import json
+import re
 
 import modbot_extension
 
@@ -31,8 +32,8 @@ class Keywords(modbot_extension.ModbotExtension):
 
     Attributes:
         name                The name of the extension
-        keywords            A dict object of the form keyword:reply.
-        config_file  The name of the configuration file
+        keywords            A dict object of the form keyword:reply_data.
+        config_file         The name of the configuration file
     """
 
     name = 'Keywords'
@@ -49,18 +50,36 @@ class Keywords(modbot_extension.ModbotExtension):
             '',
             '- Type *keyword list* for the list of keywords',
             '- Type *keyword add* _new_keyword message to display_ to add new keywords',
+            '- Type *keyword quickadd* _new_keyword_ #channel1 #channel2 to add new keywords by using the template',
             '- Type *keyword delete* _existing_keyword_ to delete a keyword',
             '',
             '*Attention!* Actions are performed without confirmation',
         )),
         'keyword_add_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
-            ''
+        )),
+        'keyword_template_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'keyword_template_missing_channel': '\n'.join((
+            'I didn\'t see the {channels} part in your template',
+        )),
+        'keyword_quickadd_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'keyword_quickadd_missing_channel': '\n'.join((
+            'I didn\'t see a link to a channel in your request',
         )),
         'keyword_delete_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
         )),
         'keyword_add_confirmation': '\n'.join((
+            'Thanks! I\'ll reply to {keyword} now',
+        )),
+        'keyword_template_confirmation': '\n'.join((
+            'Thanks! I\'ll use this new template now',
+        )),
+        'keyword_quickadd_confirmation': '\n'.join((
             'Thanks! I\'ll reply to {keyword} now',
         )),
         'keyword_delete_confirmation': '\n'.join((
@@ -70,6 +89,16 @@ class Keywords(modbot_extension.ModbotExtension):
             'Here is the list of configured keywords:',
             '',
             '{keywords}'
+        )),
+        'keyword_template': '\n'.join((
+            'Bonjour et bienvenue sur le Slack des volontaires!',
+            'Les missions sont proposées sur des canaux par compétences.',
+            'D\'après ton message, tu peux rejoindre {channels}',
+            '--',
+            'Par ailleurs, inutile de se présenter (il y a beaucoup de monde ici, si tout le monde le fait on va se perdre), pourrais-tu supprimer ton message? (via les 3 points à droite de ton message quand tu le survoles)',
+            'Il y a également plusieurs règles de fonctionnement sur #général et un tutoriel sur #tutoriel_slack.',
+            '--',
+            '_Note: je suis un bot (bleep blop!)._ Je suis un peu bête, je peux me tromper. Si je vous embête, contactez un modérateur.',
         )),
     }
 
@@ -92,14 +121,21 @@ class Keywords(modbot_extension.ModbotExtension):
         """Loads keywords from config file. Does nothing if file unreadable."""
         try:
             with open(self.config_file, "r") as config_file:
-                self.keywords = json.loads(config_file.read().strip())
+                data = json.loads(config_file.read().strip())
+                if 'keywords' in data:
+                    self.keywords = data['keywords']
+                if 'template' in data:
+                    self.replies['keyword_template'] = data['template']
         except IOError:
             logger.info('Keyword: Configuration file read error.')
 
     def save_keywords(self):
         """Saves keywords into the config file."""
         with open(self.config_file, "w") as config_file:
-            json.dump(self.keywords, config_file, ensure_ascii=False)
+            json.dump({
+                'keywords': self.keywords,
+                'template': self.replies['keyword_template']
+            }, config_file, ensure_ascii=False)
 
     def on_message(self, event):
         """
@@ -139,6 +175,10 @@ class Keywords(modbot_extension.ModbotExtension):
                 reply_data = self.keyword_add(event)
             elif event_text_sanitized.startswith('keyword delete'):
                 reply_data = self.keyword_delete(event)
+            elif event_text_sanitized.startswith('keyword quickadd'):
+                reply_data = self.keyword_quickadd(event)
+            elif event_text_sanitized.startswith('keyword template'):
+                reply_data = self.keyword_template(event)
             else:
                 reply_data = self.keyword(event)
 
@@ -171,7 +211,7 @@ class Keywords(modbot_extension.ModbotExtension):
 
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
-            self.log_info('[Keyword] Config keyword by non-admin user %s',
+            self.log_info('[Keyword] Config: "keyword" by non-admin user %s',
                           event['user'])
             return False
 
@@ -202,7 +242,7 @@ class Keywords(modbot_extension.ModbotExtension):
         # Exclude non-authorized people
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
-            self.log_info('[Keyword] Config keyword list by non-admin user %s',
+            self.log_info('[Keyword] Config: "list" by non-admin user %s',
                           event['user'])
             return False
 
@@ -214,7 +254,14 @@ class Keywords(modbot_extension.ModbotExtension):
         self.log_info('[Keyword] List viewed by %s', event['user'])
         keywords_list = '\n'.join(['*' + keyword + '* : ' + message
                                    for keyword, message
-                                   in self.keywords.items()])
+                                   in self.keywords.items()
+                                   if isinstance(message, str)])
+        keywords_list += '\n'.join(['*' + keyword + '* : '
+                                    + " ".join(message)
+                                    + ' (uses template)'
+                                    for keyword, message
+                                    in self.keywords.items()
+                                    if not isinstance(message, str)])
 
         reply_text = self.replies['keyword_list'] \
             .replace('{keywords}', keywords_list)
@@ -236,7 +283,7 @@ class Keywords(modbot_extension.ModbotExtension):
         # Exclude non-authorized people
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
-            self.log_info('[Keyword] Config keyword add by non-admin user %s',
+            self.log_info('[Keyword] Config: "add" by non-admin user %s',
                           event['user'])
             return False
 
@@ -265,6 +312,102 @@ class Keywords(modbot_extension.ModbotExtension):
         reply_data.update({'ready_to_send': True})
         return reply_data
 
+    def keyword_template(self, event):
+        """
+        Reacts to 'keyword template' messages
+
+        :param dict event: The event received
+        :return: Message to be sent
+        :rtype: False or dict
+        """
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info('[Keyword] Config: "template" by non-admin user %s',
+                          event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Data is missing from the keyword
+        if len(event['text'].split(' ')) < 3:
+            self.log_info('[Keyword] Template keyword missing info by user %s',
+                          event['user'])
+            reply_text = self.replies['keyword_template_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            template = event['text'][len('keyword template '):]
+            if '{channels}' not in template:
+                self.log_info(
+                    '[Keyword] Template keyword missing {channels} by user %s',
+                    event['user'])
+                reply_text = self.replies['keyword_template_missing_channel']
+                reply_data.update({'text': reply_text})
+            else:
+                self.replies['keyword_template'] = template
+                self.log_info('[Keyword] New template %s',
+                              event['user'])
+                reply_text = self.replies['keyword_template_confirmation']
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def keyword_quickadd(self, event):
+        """
+        Reacts to 'keyword quickadd' messages
+
+        :param dict event: The event received
+        :return: Message to be sent
+        :rtype: False or dict
+        """
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info('[Keyword] Config: quickadd by non-admin user %s',
+                          event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Data is missing from the keyword
+        if len(event['text'].split(' ')) < 4:
+            self.log_info('[Keyword] Quickadd keyword missing info by user %s',
+                          event['user'])
+            reply_text = self.replies['keyword_quickadd_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            _, _, keyword, *channels = event['text'].split(' ')
+            list_channels = [x for x in channels
+                             if x.startswith('<') and x.endswith('>')]
+            if not list_channels:
+                self.log_info(
+                    '[Keyword] Quickadd keyword without channels by user %s',
+                    event['user'])
+                reply_text = self.replies['keyword_quickadd_missing_channel']
+                reply_data.update({'text': reply_text})
+            else:
+                keyword = keyword.lower()
+                self.keywords[keyword] = list_channels
+                self.save_keywords()
+                self.log_info('[Keyword] New quick keyword %s by %s',
+                              keyword,
+                              event['user'])
+                reply_text = self.replies['keyword_quickadd_confirmation'] \
+                    .replace('{keyword}', keyword)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
     def keyword_delete(self, event):
         """
         Reacts to 'keyword delete' messages
@@ -279,7 +422,7 @@ class Keywords(modbot_extension.ModbotExtension):
         # Exclude non-authorized people
         if not self.user_is_admin(event['user']) \
                 and not self.user_is_owner(event['user']):
-            self.log_info('[Keyword] Config keyword add by non-admin user %s',
+            self.log_info('[Keyword] Config: delete by non-admin user %s',
                           event['user'])
             return False
 
@@ -361,10 +504,19 @@ class Keywords(modbot_extension.ModbotExtension):
         self.log_info('[Keyword] Keyword %s sent by user %s',
                       matching_keywords[0],
                       event['user'])
-        reply_data.update({
-            'text': self.keywords[matching_keywords[0]],
-            'ready_to_send': True
-        })
+        keyword_reply = self.keywords[matching_keywords[0]]
+        if isinstance(keyword_reply, str):
+            reply_data.update({
+                'text': keyword_reply,
+                'ready_to_send': True
+            })
+        else:
+            reply_test = self.replies['keyword_template'] \
+                .replace('{channels}', ' '.join(keyword_reply))
+            reply_data.update({
+                'text': reply_test,
+                'ready_to_send': True
+            })
         return reply_data
 
     def _send_reply_message(self, reply_message):
@@ -375,6 +527,18 @@ class Keywords(modbot_extension.ModbotExtension):
         :return: None
         """
         del reply_message['ready_to_send']
+        if '#' in reply_message['text']:
+            list_channels = set([x[1:]
+                                 for x in re.split(r'\s', reply_message['text'])
+                                 if x.startswith('#')])
+            for channel in list_channels:
+                channel_data = self.get_channel_info(channel)
+                if channel_data:
+                    reply_message['text'] = reply_message['text'].replace(
+                        '#' + channel,
+                        '<#' + channel_data['id'] + '>'
+                    )
+
         if reply_message['type'] == 'regular':
             del reply_message['type']
             self.web_client.chat_postMessage(reply_message)

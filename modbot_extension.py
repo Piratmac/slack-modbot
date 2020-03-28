@@ -72,7 +72,7 @@ class ModbotExtension:
         Refer to https://api.slack.com/methods/users.info
 
         :param str user: The user ID of the user we're searching for
-        :return: The data from the user, in Slack's format
+        :return: The data about the user, in Slack's format
         :rtype: dict
 
         """
@@ -85,6 +85,49 @@ class ModbotExtension:
             self.state['users'][user] = user_data
 
         return self.state['users'][user]
+
+    def get_channel_info(self, channel):
+        """
+        Gets data on a given channel.
+
+        Refer to https://api.slack.com/methods/conversations.list
+
+        :param str channel: The channel ID or label to find
+        :return: The data about the channel, in Slack's format
+        :rtype: dict
+
+        """
+        if (self.state_last_refresh + 60*10) < time.time():
+            self.state = {'channels': {}, 'users': {}}
+            self.log_info('Refreshing cache of users and channels')
+            self.state['channels'] = \
+                self.web_client.conversations_list()['channels']
+
+        # First, we check if the channel is there (either ID or name)
+        channel_found = [chan
+                         for chan in self.state['channels']
+                         if chan['name'] == channel
+                         or chan['id'] == channel
+                         ]
+
+        if channel_found:
+            return channel_found[0]
+        else:
+            # Otherwise, we refresh the entire list
+            self.state['channels'] = \
+                self.web_client.conversations_list()['channels']
+
+        # Then, run the search again (now that data is refreshed)
+        channel_found = [chan
+                         for chan in self.state['channels']
+                         if chan['name'] == channel
+                         or chan['id'] == channel
+                         ]
+
+        if channel_found:
+            return channel_found[0]
+        else:
+            return False
 
     def user_is_admin(self, user):
         """
