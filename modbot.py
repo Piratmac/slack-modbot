@@ -33,8 +33,10 @@ if os.environ.get("SLACK_SIGNING_SECRET") is None \
 
 # Configuration. Will not be modified by the bot.
 settings = {
-    'username': os.environ.get("SLACK_BOT_USERNAME", 'modbot'),
-    'icon_emoji': ":robot_face:",
+    'webclient': {
+        'username': os.environ.get("SLACK_BOT_USERNAME", 'modbot'),
+        'icon_emoji': ":robot_face:",
+    },
 
     'api_endpoint': '/slack/events',
     'signing_secret': os.environ.get("SLACK_SIGNING_SECRET"),
@@ -80,7 +82,7 @@ slack_events_adapter = SlackEventAdapter(
 
 # Starts the client which sends data to Slack
 slack_web_client = ModbotWebclient(token=settings['bot_token'])
-slack_web_client.set_client_settings(settings)
+slack_web_client.set_client_settings(settings['webclient'])
 
 # Determine the user ID of the bot (to prevent self-replies)
 bot_user_data = slack_web_client.auth_test()

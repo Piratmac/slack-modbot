@@ -20,7 +20,7 @@ class ModbotWebclient (WebClient):
         settings    Configuration used by the bot to send data
     """
     settings = {
-        'username': 'keyword_bot',
+        'username': 'modbot',
         'icon_emoji': ":robot_face:",
         'user_id': '',
         }
