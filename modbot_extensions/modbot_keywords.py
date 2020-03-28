@@ -148,9 +148,13 @@ class Keywords(modbot_extension.ModbotExtension):
         )),
 
         'keyword_list': '\n'.join((
-            'Here is the list of configured keywords:',
-            '',
+            'Here is the list of configured keywords',
+            '*Keywords without templates*',
             '{keywords}'
+            '',
+            '',
+            '*Keywords that use the template*',
+            '{template_keywords}',
         )),
     }
 
@@ -305,13 +309,14 @@ class Keywords(modbot_extension.ModbotExtension):
             for keyword, message in self.keywords.items()
             if isinstance(message, str)
         ])
-        keywords_list += '\n'.join([
-            '*' + keyword + '* : ' + " ".join(message) + ' (uses template)'
+        template_keywords_list = ', '.join([
+            '*' + keyword + '* : #' + " #".join(message)
             for keyword, message in self.keywords.items()
             if not isinstance(message, str)])
 
         reply_text = self.replies['keyword_list'] \
-            .replace('{keywords}', keywords_list)
+            .replace('{keywords}', keywords_list) \
+            .replace('{template_keywords}', template_keywords_list)
         reply_data.update({'text': reply_text})
 
         reply_data.update({'ready_to_send': True})
