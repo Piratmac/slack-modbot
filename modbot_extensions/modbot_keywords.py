@@ -34,11 +34,29 @@ class Keywords(modbot_extension.ModbotExtension):
         name                The name of the extension
         keywords            A dict object of the form keyword:reply_data.
         config_file         The name of the configuration file
+        config_data         For configuration that can be modified by the bot
+        config_file         The name of the configuration file
+        replies             Replies to various queries
     """
 
     name = 'Keywords'
     keywords = {}
     config_file = 'modbot_keywords_.json'
+    config_data = {
+        'keyword_template': '\n'.join((
+            'Bonjour et bienvenue sur le Slack des volontaires!',
+            'Les missions sont proposées sur des canaux par compétences.',
+            'D\'après ton message, tu peux rejoindre {channels}',
+            '--',
+            'Par ailleurs, inutile de se présenter (il y a beaucoup de monde ici, si tout le monde le fait on va se perdre), pourrais-tu supprimer ton message? (via les 3 points à droite de ton message quand tu le survoles)',
+            'Il y a également plusieurs règles de fonctionnement sur #général et un tutoriel sur #tutoriel_slack.',
+            '--',
+            '_Note: je suis un bot (bleep blop!)._ Je suis un peu bête, je peux me tromper. Si je vous embête, contactez un modérateur.',
+        )),
+        'reply_in_thread': True,
+        'reply_in_ephemeral': False,
+        'reply_to_keywords_by_admins': True,
+    }
     replies = {
         'config_in_public': '\n'.join((
             'Hello!',
@@ -73,6 +91,9 @@ class Keywords(modbot_extension.ModbotExtension):
         'keyword_delete_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
         )),
+        'keyword_delete_inexistant': '\n'.join((
+            'This keyword doesn\t exist',
+        )),
         'keyword_add_confirmation': '\n'.join((
             'Thanks! I\'ll reply to {keyword} now',
         )),
@@ -89,16 +110,6 @@ class Keywords(modbot_extension.ModbotExtension):
             'Here is the list of configured keywords:',
             '',
             '{keywords}'
-        )),
-        'keyword_template': '\n'.join((
-            'Bonjour et bienvenue sur le Slack des volontaires!',
-            'Les missions sont proposées sur des canaux par compétences.',
-            'D\'après ton message, tu peux rejoindre {channels}',
-            '--',
-            'Par ailleurs, inutile de se présenter (il y a beaucoup de monde ici, si tout le monde le fait on va se perdre), pourrais-tu supprimer ton message? (via les 3 points à droite de ton message quand tu le survoles)',
-            'Il y a également plusieurs règles de fonctionnement sur #général et un tutoriel sur #tutoriel_slack.',
-            '--',
-            '_Note: je suis un bot (bleep blop!)._ Je suis un peu bête, je peux me tromper. Si je vous embête, contactez un modérateur.',
         )),
     }
 
@@ -124,8 +135,8 @@ class Keywords(modbot_extension.ModbotExtension):
                 data = json.loads(config_file.read().strip())
                 if 'keywords' in data:
                     self.keywords = data['keywords']
-                if 'template' in data:
-                    self.replies['keyword_template'] = data['template']
+                if 'config_data' in data:
+                    self.config_data = data['config_data']
         except IOError:
             logger.info('Keyword: Configuration file read error.')
 
@@ -134,7 +145,7 @@ class Keywords(modbot_extension.ModbotExtension):
         with open(self.config_file, "w") as config_file:
             json.dump({
                 'keywords': self.keywords,
-                'template': self.replies['keyword_template']
+                'template': self.config_data
             }, config_file, ensure_ascii=False)
 
     def on_message(self, event):
@@ -167,7 +178,7 @@ class Keywords(modbot_extension.ModbotExtension):
         for i, j in accents_replacements.items():
             event_text_sanitized = event_text_sanitized.replace(i, j)
 
-        # Handle messages from admins first
+        # Configuration keywords
         if 'keyword' in event_text_sanitized.split(' '):
             if event_text_sanitized.startswith('keyword list'):
                 reply_data = self.keyword_list(event)
@@ -186,9 +197,13 @@ class Keywords(modbot_extension.ModbotExtension):
         if reply_data and reply_data['ready_to_send']:
             reply_message.update(reply_data)
         else:
-            reply_data = self.keyword_search_reply(event, event_text_sanitized)
-            if reply_data and reply_data['ready_to_send']:
-                reply_message.update(reply_data)
+            # Reply if non-admin OR if replies to admin are allowed
+            if self.config_data['reply_to_keywords_by_admins'] \
+                    or not (self.user_is_admin(event['user'])
+                            or self.user_is_owner(event['user'])):
+                reply_data = self.keyword_search_reply(event, event_text_sanitized)
+                if reply_data and reply_data['ready_to_send']:
+                    reply_message.update(reply_data)
 
         # Let's send this message!
         if reply_message['ready_to_send']:
@@ -348,7 +363,7 @@ class Keywords(modbot_extension.ModbotExtension):
                 reply_text = self.replies['keyword_template_missing_channel']
                 reply_data.update({'text': reply_text})
             else:
-                self.replies['keyword_template'] = template
+                self.config_data['keyword_template'] = template
                 self.log_info('[Keyword] New template %s',
                               event['user'])
                 reply_text = self.replies['keyword_template_confirmation']
@@ -442,12 +457,16 @@ class Keywords(modbot_extension.ModbotExtension):
             if keyword in self.keywords:
                 del self.keywords[keyword]
                 self.save_keywords()
-            self.log_info('[Keyword] Keyword %s deleted by %s',
-                          keyword,
-                          event['user'])
-            reply_text = self.replies['keyword_delete_confirmation'] \
-                .replace('{keyword}', keyword)
-            reply_data.update({'text': reply_text})
+                self.log_info('[Keyword] Keyword %s deleted by %s',
+                              keyword,
+                              event['user'])
+                reply_text = self.replies['keyword_delete_confirmation'] \
+                    .replace('{keyword}', keyword)
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['keyword_delete_inexistant'] \
+                    .replace('{keyword}', keyword)
+                reply_data.update({'text': reply_text})
 
         reply_data.update({'ready_to_send': True})
         return reply_data
@@ -511,10 +530,16 @@ class Keywords(modbot_extension.ModbotExtension):
                 'ready_to_send': True
             })
         else:
-            reply_test = self.replies['keyword_template'] \
-                .replace('{channels}', ' '.join(keyword_reply))
+            channels = ['#' + channel
+                        for channel in keyword_reply
+                        if '#' not in channel]
+            channels += [channel
+                         for channel in keyword_reply
+                         if '#' in channel]
+            reply_text = self.config_data['keyword_template'] \
+                .replace('{channels}', ' '.join(channels))
             reply_data.update({
-                'text': reply_test,
+                'text': reply_text,
                 'ready_to_send': True
             })
         return reply_data
