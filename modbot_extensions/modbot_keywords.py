@@ -44,9 +44,14 @@ class Keywords(modbot_extension.ModbotExtension):
     keywords = {}
     config_file = 'modbot_keywords_.json'
     config_data = {
+        # Will the bot will reply with a threaded message?
         'reply_in_thread': True,
+        # Will the bot will reply with ephemeral message?
         'reply_in_ephemeral': False,
+        # Will the bot reply to admins if they mention keywords?
         'reply_to_keywords_by_admins': True,
+        # Will the bot reply to replies? (False = reply to top-level only)
+        'reply_to_replies': False,
     }
     keyword_template_text = '\n'.join((
         'Bonjour et bienvenue sur le Slack des volontaires!',
@@ -133,6 +138,7 @@ class Keywords(modbot_extension.ModbotExtension):
             'reply_in_thread': 'The bot will reply publicly inside a thread.',
             'reply_in_ephemeral': 'The bot will reply privately.',
             'reply_to_keywords_by_admins': 'The bot will reply to admins if they say keywords.',
+            'reply_to_replies': 'The bot will reply to replies in threads (False = replies only to top-level messages)',
         },
         'keyword_config_current_value': '\n'.join((
             ' - Current value:',
@@ -179,9 +185,9 @@ class Keywords(modbot_extension.ModbotExtension):
             with open(self.config_file, "r") as config_file:
                 data = json.loads(config_file.read().strip())
                 if 'keywords' in data:
-                    self.keywords = data['keywords']
+                    self.keywords.update(data['keywords'])
                 if 'config_data' in data:
-                    self.config_data = data['config_data']
+                    self.config_data.update(data['config_data'])
                 if 'keyword_template_text' in data:
                     self.keyword_template_text = data['keyword_template_text']
         except IOError:
@@ -211,21 +217,13 @@ class Keywords(modbot_extension.ModbotExtension):
             'type': ['thread', 'ephemeral'],
             'thread_ts': event['ts'],
         }
+        # Reply with the top-level timestamp
+        if 'thread_ts' in event:
+            reply_message.update({'thread_ts': event['thread_ts']})
         reply_data = False
 
         # Sanitizing the message, to better match keywords
-        event_text_sanitized = event['text'].lower()
-
-        accents_replacements = {
-            'à': 'a', 'ä': 'a', 'â': 'a',
-            'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
-            'ï': 'i', 'ï': 'i',
-            'ö': 'o', 'ô': 'o',
-            'ù': 'u', 'ü': 'u', 'û': 'u',
-        }
-
-        for i, j in accents_replacements.items():
-            event_text_sanitized = event_text_sanitized.replace(i, j)
+        event_text_sanitized = self._sanitize_text(event['text'])
 
         # Configuration keywords
         if 'keyword' in event_text_sanitized.split(' '):
@@ -257,13 +255,24 @@ class Keywords(modbot_extension.ModbotExtension):
         if reply_data and reply_data['ready_to_send']:
             reply_message.update(reply_data)
         else:
-            # Reply if non-admin OR if replies to admin are allowed
-            if self.config_data['reply_to_keywords_by_admins'] \
-                    or not (self.user_is_admin(event['user'])
-                            or self.user_is_owner(event['user'])):
-                reply_data = self.keyword_search_reply(event, event_text_sanitized)
-                if reply_data and reply_data['ready_to_send']:
-                    reply_message.update(reply_data)
+            # For admins, reply only if config allows it
+            if (self.user_is_admin(event['user'])
+                    or self.user_is_owner(event['user'])) \
+                    and not self.config_data['reply_to_keywords_by_admins']:
+                return False
+
+            # This is a threaded message (parent or reply)
+            # See https://api.slack.com/messaging/retrieving#finding_threads
+            if 'thread_ts' in event:
+                # This is a child message, so we reply only if config allows it
+                if event['thread_ts'] != event['ts']:
+                    if not self.config_data['reply_to_replies']:
+                        return False
+
+            # Reaching this point means there should be a reply
+            reply_data = self.keyword_search_reply(event, event_text_sanitized)
+            if reply_data and reply_data['ready_to_send']:
+                reply_message.update(reply_data)
 
         # Let's send this message!
         if reply_message['ready_to_send']:
@@ -317,7 +326,7 @@ class Keywords(modbot_extension.ModbotExtension):
         # Data is missing from the keyword
         if len(event['text'].split(' ')) < 4:
             self.log_info('[Keyword] Add keyword missing info by %user',
-                user=event['user'])
+                          user=event['user'])
             reply_text = self.replies['keyword_add_missing_param']
             reply_data.update({'text': reply_text})
         else:
@@ -461,13 +470,15 @@ class Keywords(modbot_extension.ModbotExtension):
             return self.keyword_config_list(event)
 
         _, _, key, *value = event['text'].split(' ')
-        key = key.lower()
         value = ' '.join(value)
+        key = self._sanitize_text(key, only_formatting=True)
+        value_sanitized = self._sanitize_text(value, only_formatting=True)
+
         if key in self.config_data:
             # For boolean values, check that we have received a boolean value
             if isinstance(self.config_data[key], bool) \
-                    and value.lower() in ['true', 'false', '0', '1']:
-                if value.lower() in ['false', '0']:
+                    and value_sanitized in ['true', 'false', '0', '1']:
+                if value_sanitized in ['false', '0']:
                     self.config_data[key] = False
                 else:
                     self.config_data[key] = True
@@ -506,7 +517,7 @@ class Keywords(modbot_extension.ModbotExtension):
 
         # Just make the list and send it
         self.log_info('[Keyword] Config list viewed by %user',
-            user=event['user'])
+                      user=event['user'])
 
         config_list = '\n'.join([
             '*' + key + '* : '
@@ -637,7 +648,6 @@ class Keywords(modbot_extension.ModbotExtension):
                         '#' + channel,
                         '<#' + channel_data['id'] + '>'
                     )
-
         if 'regular' in reply_message['type']:
             reply_to_send = reply_message.copy()
             del reply_to_send['type']
@@ -655,7 +665,52 @@ class Keywords(modbot_extension.ModbotExtension):
                 and self.config_data['reply_in_thread']:
             reply_to_send = reply_message.copy()
             del reply_to_send['type']
+            del reply_to_send['user']
             self.web_client.chat_postMessage(reply_to_send)
+
+    def _sanitize_text(self, text, only_formatting=False):
+        """
+        Sanitizes a text for easier processing
+
+        Removes accents and formatting characters from a string
+        Changes case to lowercase
+
+        :param str text: The text to be sanitized
+        :param boolean only_formatting: Only formatting should be removed
+        :return: The sanitized text
+        :rtype: str
+        """
+        # Sanitizing the message, to better match keywords
+        sanitized_text = text.lower()
+
+        # Careful with the order
+        # longer formatting like ** should be before shorter ones like *
+        # Other formatting elements need a space before
+        # Links stay "as is" because the bot shouldn't touch them
+        formatting_replacements = {
+            '**': '', '*': '', '__': '', '_': '', '```': '', '`': '',
+        }
+
+        character_replacements = {
+            'à': 'a', 'ä': 'a', 'â': 'a',
+            'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
+            'ï': 'i', 'ï': 'i',
+            'ö': 'o', 'ô': 'o',
+            'ù': 'u', 'ü': 'u', 'û': 'u',
+        }
+        character_replacements.update(formatting_replacements)
+
+        if only_formatting:
+            for i, j in character_replacements.items():
+                if sanitized_text.startswith(i):
+                    sanitized_text = sanitized_text[len(i):]
+                if sanitized_text.endswith(i):
+                    sanitized_text = sanitized_text[:-len(i)]
+        else:
+            for i, j in character_replacements.items():
+                sanitized_text = sanitized_text.replace(i, j)
+
+        return sanitized_text
 
 
 modbot_extension.extension_store.register_extension(Keywords)

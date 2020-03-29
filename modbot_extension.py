@@ -74,7 +74,6 @@ class ModbotExtension:
                 )
             del kwargs['user']
 
-
         logging.info(msg, *args, **kwargs)
 
     def get_user_info(self, user):
