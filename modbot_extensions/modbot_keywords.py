@@ -637,17 +637,7 @@ class Keywords(modbot_extension.ModbotExtension):
         :return: None
         """
         del reply_message['ready_to_send']
-        if '#' in reply_message['text']:
-            list_channels = set([x[1:]
-                                 for x in re.split(r'\s', reply_message['text'])
-                                 if x.startswith('#')])
-            for channel in list_channels:
-                channel_data = self.get_channel_info(channel)
-                if channel_data:
-                    reply_message['text'] = reply_message['text'].replace(
-                        '#' + channel,
-                        '<#' + channel_data['id'] + '>'
-                    )
+
         if 'regular' in reply_message['type']:
             reply_to_send = reply_message.copy()
             del reply_to_send['type']

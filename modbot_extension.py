@@ -7,6 +7,8 @@
 import logging
 import time
 
+logger = logging.getLogger(__name__)
+
 
 class ModbotExtension:
     """
@@ -25,7 +27,6 @@ class ModbotExtension:
         web_client          The client used to send messages
 
     """
-    global logging
 
     name = ''
     settings = {}
@@ -61,9 +62,7 @@ class ModbotExtension:
         pass
 
     def log_info(self, msg, *args, **kwargs):
-        """Log errors without re-import of logging in each module."""
-        global logging
-
+        """Log errors while replacing the user ID with its name."""
         if 'user' in kwargs:
             user_data = self.get_user_info(kwargs['user'])
             if user_data:
@@ -74,7 +73,7 @@ class ModbotExtension:
                 )
             del kwargs['user']
 
-        logging.info(msg, *args, **kwargs)
+        logger.info(msg, *args, **kwargs)
 
     def get_user_info(self, user):
         """
@@ -97,7 +96,7 @@ class ModbotExtension:
                 self.state['users'][user] = user_data['user']
                 return self.state['users'][user]
             else:
-                logging.warning('[BotExtension] Couldn\'t find user %s', user)
+                logger.warning('[BotExtension] Couldn\'t find user %s', user)
                 return False
         else:
             return self.state['users'][user]
@@ -361,8 +360,6 @@ class ExtensionManager(ModbotExtension):
         web_client          The client used to send messages
 
     """
-    global logging
-
     name = 'ExtensionManager'
     web_client = {}
 

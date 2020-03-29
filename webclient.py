@@ -3,10 +3,12 @@
 """
     Modified slack.WebClient class for simplified calls
 """
-
+import logging
 
 from slack import WebClient
 from slack.errors import SlackApiError
+
+logger = logging.getLogger(__name__)
 
 
 class ModbotWebclient (WebClient):
@@ -43,6 +45,9 @@ class ModbotWebclient (WebClient):
         payload = self.settings.copy()
         payload.update(input_data)
 
+        logger.debug('[WebClient] Sending chat.postMessage:')
+        logger.debug(payload)
+
         return super().chat_postMessage(**payload)
 
     def conversations_open(self, input_data):
@@ -67,5 +72,8 @@ class ModbotWebclient (WebClient):
         """
         payload = self.settings.copy()
         payload.update(input_data)
+
+        logger.debug('[WebClient] Sending chat.postEphemeral:')
+        logger.debug(payload)
 
         return super().chat_postEphemeral(**payload)
