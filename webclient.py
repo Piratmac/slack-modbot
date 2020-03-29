@@ -21,7 +21,6 @@ class ModbotWebclient (WebClient):
     """
     settings = {
         'username': 'modbot',
-        'icon_emoji': ":robot_face:",
         'user_id': '',
         }
 

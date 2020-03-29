@@ -35,7 +35,6 @@ if os.environ.get("SLACK_SIGNING_SECRET") is None \
 settings = {
     'webclient': {
         'username': os.environ.get("SLACK_BOT_USERNAME", 'modbot'),
-        'icon_emoji': ":robot_face:",
     },
 
     'api_endpoint': '/slack/events',
