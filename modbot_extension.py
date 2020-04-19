@@ -61,6 +61,10 @@ class ModbotExtension:
         """Does nothing. Triggered when messages are edited."""
         pass
 
+    def help(self, event):
+        """Does nothing. Triggered when help is requested."""
+        pass
+
     def log_info(self, msg, *args, **kwargs):
         """Log errors while replacing the user ID with its name."""
         if 'user' in kwargs:
@@ -530,16 +534,20 @@ class ExtensionManager(ModbotExtension):
             'Hello!',
             'Please configure me here, not in public (I\'m a bit shy...)'
         )),
-        'config_in_im': '\n'.join((
+        'extension_help': '\n'.join((
             'Hello!',
-            'Welcome to the configuration page',
+            'Type *help* for help.',
+            'Type *help* _extension_ for help on a specific extension.',
             '',
+            'For the extension manager (admins only!):',
             '- Type *extension list* for the list of extensions',
             '- Type *extension load* _extension_ to load an extension',
             '- Type *extension enable* _extension_ to enable an extension',
             '- Type *extension disable* _extension_ to enable an extension',
-            '',
-            '*Attention!* Actions are performed without confirmation',
+            'List of extensions: {extensions}',
+        )),
+        'extension_help_no_extension_found': '\n'.join((
+            'There is no extension with that name. Try *help* for the list',
         )),
         'extension_list': '\n'.join((
             'Hello!',
@@ -549,14 +557,14 @@ class ExtensionManager(ModbotExtension):
         'extension_enabled': '\n'.join((
             'Enabled globally',
         )),
+        'extension_enabled_for': '\n'.join((
+            'enabled on channels',
+        )),
         'extension_enabled_in_im': '\n'.join((
             'enabled in direct messages',
         )),
         'extension_disabled': '\n'.join((
             'Disabled globally',
-        )),
-        'extension_enabled_for': '\n'.join((
-            'enabled on channels',
         )),
         'extension_load_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
@@ -651,7 +659,11 @@ class ExtensionManager(ModbotExtension):
         reply_data = False
 
         # Handle received messages
-        if event['text'].startswith('extension'):
+        if event['text'] in ['help', 'extension help', 'help extension']:
+            reply_data = self.help(event)
+        elif event['text'].startswith('help '):
+            reply_data = self.help_other_extension(event)
+        elif event['text'].startswith('extension'):
             if event['text'].startswith('extension list'):
                 reply_data = self.extension_list(event)
             elif event['text'].startswith('extension load '):
@@ -679,6 +691,61 @@ class ExtensionManager(ModbotExtension):
         # No reply found
         else:
             return False
+
+    def help(self, event):
+        """
+        Reacts to 'help' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        self.log_info('[ExtManager] Help viewed by %user', user=event['user'])
+
+        extensions_list = ', '.join(extension_store.extensions)
+
+        reply_text = self.replies['extension_help'] \
+            .replace('{extensions}', extensions_list)
+        reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def help_other_extension(self, event):
+        """
+        Reacts to 'help extension' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        self.log_info('[ExtManager] Help viewed by %user', user=event['user'])
+
+        _, extension, *_ = event['text'].split(' ')
+        if extension in extension_store.extensions:
+            reply_data = extension_store \
+                         .extensions[extension]['instance'] \
+                         .help(event)
+        else:
+            reply_text = self.replies['extension_help_no_extension_found']
+            reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
 
     def extension_list(self, event):
         """

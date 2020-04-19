@@ -68,9 +68,8 @@ class Keywords(modbot_extension.ModbotExtension):
             'Hello!',
             'Please configure me here, not in public (I\'m a bit shy...)'
         )),
-        'config_in_im': '\n'.join((
-            'Hello!',
-            'Welcome to the keywords config page!',
+        'help': '\n'.join((
+            'Keywords extension help (admin only!):',
             '',
             '- Type *keyword list* for the list of keywords',
             '- Type *keyword add* _new_keyword message to display_ to add new keywords',
@@ -282,6 +281,25 @@ class Keywords(modbot_extension.ModbotExtension):
         # No keyword found
         else:
             return False
+
+    def help(self, event):
+        """
+        Reacts to 'help keywords' messages
+
+        :param dict event: The event received
+        :return: Message to be sent
+        :rtype: dict
+        """
+        reply_data = {'type': 'regular'}
+
+        # Just make the list and send it
+        self.log_info('[Keyword] Help viewed by %user', user=event['user'])
+
+        reply_text = self.replies['help']
+        reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
 
     def keyword_list(self, event):
         """
