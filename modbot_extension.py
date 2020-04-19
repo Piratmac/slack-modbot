@@ -283,6 +283,33 @@ class ExtensionStore(object):
             )
             return True
 
+    def enable_extension_for_im(self, name):
+        """
+        Enables an extension for IM messages
+
+        This allows the extension to receive data from Slack for IM messages
+
+        :param str name: The extension's name
+        :return: True if extension was enabled, False otherwise
+        :rtype: Boolean
+        """
+        if not self.is_registered(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not registered'
+            )
+            return False
+        elif not self.is_loaded(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not loaded'
+            )
+            return False
+        else:
+            self.extensions[name.lower()]['enabled_for_im'] = True
+            logging.info(
+                '[ExtStore] Extension ' + name + ' enabled for IMs'
+            )
+            return True
+
     def disable_extension(self, name):
         """
         Disables an extension
@@ -316,7 +343,7 @@ class ExtensionStore(object):
         """
         Disables an extension for a given channel
 
-        This prevents the extension to receive data from Slack
+        This prevents the extension to receive data from Slack on some channels
 
         :param str name: The extension's name
         :return: True if extension was disabled, False otherwise
@@ -336,6 +363,33 @@ class ExtensionStore(object):
             self.extensions[name.lower()]['enabled_for_channels'].remove(channel)
             logging.info(
                 '[ExtStore] Extension ' + name + ' disabled for ' + channel
+            )
+            return True
+
+    def disable_extension_for_im(self, name):
+        """
+        Disables an extension for a given channel
+
+        This prevents the extension to receive data from Slack for IMs
+
+        :param str name: The extension's name
+        :return: True if extension was disabled, False otherwise
+        :rtype: Boolean
+        """
+        if not self.is_registered(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not registered'
+            )
+            return False
+        elif not self.is_enabled(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not enabled'
+            )
+            return False
+        else:
+            self.extensions[name.lower()]['enabled_for_im'] = False
+            logging.info(
+                '[ExtStore] Extension ' + name + ' disabled for IMs'
             )
             return True
 
@@ -531,6 +585,15 @@ class ExtensionManager(ModbotExtension):
         'extension_enable_for_failure': '\n'.join((
             'Fail: Extension {extension} could not be enabled',
         )),
+        'extension_enable_for_im_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_enable_for_im_success': '\n'.join((
+            'Success: Extension {extension} enabled successfully for IMs',
+        )),
+        'extension_enable_for_im_failure': '\n'.join((
+            'Fail: Extension {extension} could not be enabled',
+        )),
         'extension_disable_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
         )),
@@ -547,6 +610,15 @@ class ExtensionManager(ModbotExtension):
             'Success: Extension {extension} disabled successfully on channel {channel}',
         )),
         'extension_disable_for_failure': '\n'.join((
+            'Fail: Extension {extension} could not be disabled',
+        )),
+        'extension_disable_for_im_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_disable_for_im_success': '\n'.join((
+            'Success: Extension {extension} disabled successfully for IMs',
+        )),
+        'extension_disable_for_im_failure': '\n'.join((
             'Fail: Extension {extension} could not be disabled',
         )),
     }
@@ -588,10 +660,14 @@ class ExtensionManager(ModbotExtension):
                 reply_data = self.extension_enable(event)
             elif event['text'].startswith('extension enable_for '):
                 reply_data = self.extension_enable_for(event)
+            elif event['text'].startswith('extension enable_for_im '):
+                reply_data = self.extension_enable_for_im(event)
             elif event['text'].startswith('extension disable '):
                 reply_data = self.extension_disable(event)
             elif event['text'].startswith('extension disable_for '):
                 reply_data = self.extension_disable_for(event)
+            elif event['text'].startswith('extension disable_for_im '):
+                reply_data = self.extension_disable_for_im(event)
 
         # We have a config message to send
         if reply_data and reply_data['ready_to_send']:
@@ -815,6 +891,58 @@ class ExtensionManager(ModbotExtension):
         reply_data.update({'ready_to_send': True})
         return reply_data
 
+    def extension_enable_for_im(self, event):
+        """
+        Reacts to 'extension enable_for_im' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "enable_for_im" by non-admin user %user',
+                user=event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 3:
+            self.log_info(
+                '[ExtManager] Config: Enable_for_im missing info by user %user',
+                user=event['user'])
+            reply_text = self.replies['extension_enable_for_im_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            _, _, ext_name, *_ = event['text'].split(' ')
+            ext_name = ext_name.lower()
+
+            enable_status = extension_store.enable_extension_for_im(ext_name)
+            if enable_status:
+                self.log_info(
+                    '[ExtManager] Extension %s enabled by %user for IMs',
+                    ext_name,
+                    user=event['user'],
+                )
+                reply_text = self.replies['extension_enable_for_im_success'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_enable_for_im_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
     def extension_disable(self, event):
         """
         Reacts to 'extension disable' messages
@@ -900,9 +1028,9 @@ class ExtensionManager(ModbotExtension):
             ext_name = ext_name.lower()
             channel = self.get_channel_info(channel)
 
-            enable_status = extension_store. \
+            disable_status = extension_store. \
                 disable_extension_for(ext_name, channel['id'])
-            if enable_status and channel:
+            if disable_status and channel:
                 self.log_info(
                     '[ExtManager] Extension %s disabled by %user on '
                     + channel['name'],
@@ -915,6 +1043,58 @@ class ExtensionManager(ModbotExtension):
                 reply_data.update({'text': reply_text})
             else:
                 reply_text = self.replies['extension_disable_for_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def extension_disable_for_im(self, event):
+        """
+        Reacts to 'extension disable_for_im' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "disable_for_im" by non-admin user %user',
+                user=event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 3:
+            self.log_info(
+                '[ExtManager] Config: disable_for_im missing info by user %user',
+                user=event['user'])
+            reply_text = self.replies['extension_disable_for_im_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            _, _, ext_name, *_ = event['text'].split(' ')
+            ext_name = ext_name.lower()
+
+            disable_status = extension_store.disable_extension_for_im(ext_name)
+            if disable_status:
+                self.log_info(
+                    '[ExtManager] Extension %s disabled for IMs by %user',
+                    ext_name,
+                    user=event['user'],
+                )
+                reply_text = self.replies['extension_disable_for_im_success'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_disable_for_im_failure'] \
                     .replace('{extension}', ext_name)
                 reply_data.update({'text': reply_text})
 
