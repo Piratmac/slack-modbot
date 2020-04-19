@@ -121,7 +121,14 @@ class ModbotExtension:
             self.state['channels'] = \
                 self.web_client.conversations_list()['channels']
 
-        # First, we check if the channel is there (either ID or name)
+        # Parse the channel name
+        # Received either as #channel or <#channel_id|channel_name>
+        if '<' in channel:
+            channel = channel.split('|')[0][2:]
+        elif channel[0] == '#':
+            channel = channel[1:]
+
+        # Check if the channel is there (either ID or name)
         channel_found = [chan
                          for chan in self.state['channels']
                          if chan['name'] == channel
@@ -191,6 +198,8 @@ class ExtensionStore(object):
                 'class': extension_class,
                 'loaded': False,
                 'enabled': False,
+                'enabled_for_im': True,
+                'enabled_for_channels': set(),
             }
         logging.info(
             '[ExtStore] Extension ' + extension_class.name + ' registered'
@@ -247,6 +256,33 @@ class ExtensionStore(object):
             )
             return True
 
+    def enable_extension_for(self, name, channel):
+        """
+        Enables an extension for a given channel
+
+        This allows the extension to receive data from Slack for this channel
+
+        :param str name: The extension's name
+        :return: True if extension was enabled, False otherwise
+        :rtype: Boolean
+        """
+        if not self.is_registered(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not registered'
+            )
+            return False
+        elif not self.is_loaded(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not loaded'
+            )
+            return False
+        else:
+            self.extensions[name.lower()]['enabled_for_channels'].add(channel)
+            logging.info(
+                '[ExtStore] Extension ' + name + ' enabled for ' + channel
+            )
+            return True
+
     def disable_extension(self, name):
         """
         Disables an extension
@@ -273,6 +309,33 @@ class ExtensionStore(object):
             })
             logging.info(
                 '[ExtStore] Extension ' + name + ' disabled'
+            )
+            return True
+
+    def disable_extension_for(self, name, channel):
+        """
+        Disables an extension for a given channel
+
+        This prevents the extension to receive data from Slack
+
+        :param str name: The extension's name
+        :return: True if extension was disabled, False otherwise
+        :rtype: Boolean
+        """
+        if not self.is_registered(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not registered'
+            )
+            return False
+        elif not self.is_enabled(name):
+            logging.info(
+                '[ExtStore] Extension ' + name + ' not enabled'
+            )
+            return False
+        else:
+            self.extensions[name.lower()]['enabled_for_channels'].remove(channel)
+            logging.info(
+                '[ExtStore] Extension ' + name + ' disabled for ' + channel
             )
             return True
 
@@ -339,7 +402,7 @@ class ExtensionStore(object):
 
     def is_enabled(self, name):
         """
-        Indicates whether an extension is loaded or not
+        Indicates whether an extension is enabled or not
 
         :param str name: The extension's name
         :return: True if extension is enabled, False otherwise
@@ -348,6 +411,50 @@ class ExtensionStore(object):
         if self.is_registered(name) \
                 and self.extensions[name.lower()]['enabled']:
             return True
+        return False
+
+    def is_enabled_for(self, name, event):
+        """
+        Indicates whether an extension is enabled in a given context
+
+        :param str name: The extension's name
+        :param dict event: The received event
+        :return: True if extension is enabled for this event, False otherwise
+        :rtype: Boolean
+        """
+        ext = self.extensions[name.lower()]
+        if self.is_registered(name) and ext['enabled']:
+            if event['channel_type'] == 'im':
+                return ext['enabled_for_im']
+            else:
+                return event['channel'] in ext['enabled_for_channels']
+        return False
+
+    def is_enabled_in_im(self, name):
+        """
+        Indicates whether an extension is enabled in IM (direct messages)
+
+        :param str name: The extension's name
+        :param dict event: The received event
+        :return: True if extension is enabled in IM, False otherwise
+        :rtype: Boolean
+        """
+        ext = self.extensions[name.lower()]
+        if self.is_registered(name) and ext['enabled']:
+            return ext['enabled_for_im']
+        return False
+
+    def list_enabled_for(self, name):
+        """
+        Indicates on which channels an extension is enabled
+
+        :param str name: The extension's name
+        :return: A set of channels where the extension is enabled
+        :rtype: set
+        """
+        ext = self.extensions[name.lower()]
+        if self.is_registered(name) and ext['enabled']:
+            return ext['enabled_for_channels']
         return False
 
 
@@ -383,8 +490,19 @@ class ExtensionManager(ModbotExtension):
         'extension_list': '\n'.join((
             'Hello!',
             'Here are all identified extensions:',
-            '*name*: Whether it\'s enabled',
             '{extensions}',
+        )),
+        'extension_enabled': '\n'.join((
+            'Enabled globally',
+        )),
+        'extension_enabled_in_im': '\n'.join((
+            'enabled in direct messages',
+        )),
+        'extension_disabled': '\n'.join((
+            'Disabled globally',
+        )),
+        'extension_enabled_for': '\n'.join((
+            'enabled on channels',
         )),
         'extension_load_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
@@ -404,6 +522,15 @@ class ExtensionManager(ModbotExtension):
         'extension_enable_failure': '\n'.join((
             'Fail: Extension {extension} could not be enabled',
         )),
+        'extension_enable_for_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_enable_for_success': '\n'.join((
+            'Success: Extension {extension} enabled successfully on channel {channel}',
+        )),
+        'extension_enable_for_failure': '\n'.join((
+            'Fail: Extension {extension} could not be enabled',
+        )),
         'extension_disable_missing_param': '\n'.join((
             'I didn\'t understand your request, could you retry?',
         )),
@@ -411,6 +538,15 @@ class ExtensionManager(ModbotExtension):
             'Success: Extension {extension} disabled successfully',
         )),
         'extension_disable_failure': '\n'.join((
+            'Fail: Extension {extension} could not be disabled',
+        )),
+        'extension_disable_for_missing_param': '\n'.join((
+            'I didn\'t understand your request, could you retry?',
+        )),
+        'extension_disable_for_success': '\n'.join((
+            'Success: Extension {extension} disabled successfully on channel {channel}',
+        )),
+        'extension_disable_for_failure': '\n'.join((
             'Fail: Extension {extension} could not be disabled',
         )),
     }
@@ -442,16 +578,20 @@ class ExtensionManager(ModbotExtension):
         }
         reply_data = False
 
-        # Handle messages from admins first
+        # Handle received messages
         if event['text'].startswith('extension'):
             if event['text'].startswith('extension list'):
                 reply_data = self.extension_list(event)
-            elif event['text'].startswith('extension load'):
+            elif event['text'].startswith('extension load '):
                 reply_data = self.extension_add(event)
-            elif event['text'].startswith('extension enable'):
+            elif event['text'].startswith('extension enable '):
                 reply_data = self.extension_enable(event)
-            elif event['text'].startswith('extension disable'):
+            elif event['text'].startswith('extension enable_for '):
+                reply_data = self.extension_enable_for(event)
+            elif event['text'].startswith('extension disable '):
                 reply_data = self.extension_disable(event)
+            elif event['text'].startswith('extension disable_for '):
+                reply_data = self.extension_disable_for(event)
 
         # We have a config message to send
         if reply_data and reply_data['ready_to_send']:
@@ -489,9 +629,23 @@ class ExtensionManager(ModbotExtension):
 
         # Just make the list and send it
         self.log_info('[ExtManager] List viewed by %user', user=event['user'])
-        ext_list = '\n'.join(['*' + extension + '* : '
-                              + str(extension_store.is_enabled(extension))
-                              for extension in extension_store.extensions])
+        ext_list = []
+        for extension in extension_store.extensions:
+            ext_message = '*' + extension + '* : '
+            if extension_store.is_enabled(extension):
+                ext_message += self.replies['extension_enabled']
+                if extension_store.is_enabled_in_im(extension):
+                    ext_message += ', ' \
+                                   + self.replies['extension_enabled_in_im']
+                list_channels = extension_store.list_enabled_for(extension)
+                if list_channels:
+                    ext_message += ', ' + self.replies['extension_enabled_for']
+                    ext_message += ' <#' + '> <#'.join(list_channels) + '>'
+            else:
+                ext_message += self.replies['extension_disabled']
+            ext_list.append(ext_message)
+
+        ext_list = '\n'.join(ext_list)
 
         reply_text = self.replies['extension_list'] \
             .replace('{extensions}', ext_list)
@@ -605,6 +759,62 @@ class ExtensionManager(ModbotExtension):
         reply_data.update({'ready_to_send': True})
         return reply_data
 
+    def extension_enable_for(self, event):
+        """
+        Reacts to 'extension enable_for' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "enable_for" by non-admin user %user',
+                user=event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 4:
+            self.log_info(
+                '[ExtManager] Config: Enable_for missing info by user %user',
+                user=event['user'])
+            reply_text = self.replies['extension_enable_for_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            _, _, ext_name, channel, *_ = event['text'].split(' ')
+            ext_name = ext_name.lower()
+            channel = self.get_channel_info(channel)
+
+            enable_status = extension_store. \
+                enable_extension_for(ext_name, channel['id'])
+            if enable_status and channel:
+                self.log_info(
+                    '[ExtManager] Extension %s enabled by %user on '
+                    + channel['name'],
+                    ext_name,
+                    user=event['user'],
+                )
+                reply_text = self.replies['extension_enable_for_success'] \
+                    .replace('{extension}', ext_name) \
+                    .replace('{channel}', '<#' + channel['id'] + '>')
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_enable_for_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
     def extension_disable(self, event):
         """
         Reacts to 'extension disable' messages
@@ -649,6 +859,62 @@ class ExtensionManager(ModbotExtension):
                 reply_data.update({'text': reply_text})
             else:
                 reply_text = self.replies['extension_disable_failure'] \
+                    .replace('{extension}', ext_name)
+                reply_data.update({'text': reply_text})
+
+        reply_data.update({'ready_to_send': True})
+        return reply_data
+
+    def extension_disable_for(self, event):
+        """
+        Reacts to 'extension disable_for' messages
+
+        :param dict event: The event received
+        :return: Message to be sent, False otherwise
+        :rtype: False or dict
+        """
+        global extension_store
+        reply_data = {'type': 'regular'}
+
+        # Exclude non-authorized people
+        if not self.user_is_admin(event['user']) \
+                and not self.user_is_owner(event['user']):
+            self.log_info(
+                '[ExtManager] Config: "disable_for" by non-admin user %user',
+                user=event['user'])
+            return False
+
+        # Redirect to a private chat so that we're not discussing in public
+        if event['channel_type'] == 'channel':
+            return self.switch_to_im(event)
+
+        # Missing argument
+        if len(event['text'].split(' ')) < 4:
+            self.log_info(
+                '[ExtManager] Config: disable_for missing info by user %user',
+                user=event['user'])
+            reply_text = self.replies['extension_disable_for_missing_param']
+            reply_data.update({'text': reply_text})
+        else:
+            _, _, ext_name, channel, *_ = event['text'].split(' ')
+            ext_name = ext_name.lower()
+            channel = self.get_channel_info(channel)
+
+            enable_status = extension_store. \
+                disable_extension_for(ext_name, channel['id'])
+            if enable_status and channel:
+                self.log_info(
+                    '[ExtManager] Extension %s disabled by %user on '
+                    + channel['name'],
+                    ext_name,
+                    user=event['user'],
+                )
+                reply_text = self.replies['extension_disable_for_success'] \
+                    .replace('{extension}', ext_name) \
+                    .replace('{channel}', '<#' + channel['id'] + '>')
+                reply_data.update({'text': reply_text})
+            else:
+                reply_text = self.replies['extension_disable_for_failure'] \
                     .replace('{extension}', ext_name)
                 reply_data.update({'text': reply_text})
 

@@ -114,7 +114,7 @@ def message(payload):
 
     elif 'subtype' in event and event['subtype'] == 'message_deleted':
         for ext in extension_store.extensions:
-            if extension_store.is_enabled(ext):
+            if extension_store.is_enabled_for(ext, event):
                 extension_store \
                     .extensions[ext]['instance'] \
                     .on_message_deletion(event)
@@ -122,7 +122,7 @@ def message(payload):
 
     elif 'subtype' in event and event['subtype'] == 'message_changed':
         for ext in extension_store.extensions:
-            if extension_store.is_enabled(ext):
+            if extension_store.is_enabled_for(ext, event):
                 extension_store \
                     .extensions[ext]['instance'] \
                     .on_message_changed(event)
@@ -135,7 +135,7 @@ def message(payload):
     logger.debug(payload)
 
     for ext in extension_store.extensions:
-        if extension_store.is_enabled(ext):
+        if extension_store.is_enabled_for(ext, event):
             extension_store \
                 .extensions[ext]['instance'] \
                 .on_message(event)
