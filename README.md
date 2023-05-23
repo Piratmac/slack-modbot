@@ -13,4 +13,6 @@ Currently:
 
 # IMPORTANT
 
+This is an old project that is no longer maintained or actively used. It has been archived on May 23rd, 2023.
+
 I'm not a Python expert. Neither am I a professional developer, so use anything here at your own risk!
